@@ -589,16 +589,18 @@ namespace dlib
                 cuda_data_ptr<float> loss_buf = static_pointer_cast<float>(buf, 1);
                 buf = buf+sizeof(float);
 
+                const size_t bytes_per_channel = subnetwork_output.nr()*subnetwork_output.nc()*sizeof(float);
+
                 // copy the truth data into a cuda buffer.
                 for (long i = 0; i < subnetwork_output.num_samples(); ++i, ++truth)
                 {
                     const auto& t = *truth;
                     DLIB_ASSERT(t.size() == subnetwork_output.k());
-                    for (const auto& tk : t) {
-                        DLIB_ASSERT(tk.nr() == subnetwork_output.nr());
-                        DLIB_ASSERT(tk.nc() == subnetwork_output.nc());
+                    for (size_t j = 0; j < t.size(); ++j) {
+                        DLIB_ASSERT(t[j].nr() == subnetwork_output.nr());
+                        DLIB_ASSERT(t[j].nc() == subnetwork_output.nc());
+                        memcpy(buf + i*bytes_per_plane + j*bytes_per_channel, &t[j](0,0), bytes_per_channel);
                     }
-                    memcpy(buf + i*bytes_per_plane, &t, bytes_per_plane);
                 }
 
                 auto truth_buf = static_pointer_cast<const float>(buf, subnetwork_output.num_samples()*image_size);
