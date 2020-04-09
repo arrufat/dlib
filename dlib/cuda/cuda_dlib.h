@@ -592,10 +592,12 @@ namespace dlib
                 // copy the truth data into a cuda buffer.
                 for (long i = 0; i < subnetwork_output.num_samples(); ++i, ++truth)
                 {
-                    typename std::remove_const<typename std::remove_reference<decltype(truth)>::type>::type& t = *truth;
-                    // const_label_iterator& t = *truth;
-                    DLIB_ASSERT(t.nr() == subnetwork_output.nr());
-                    DLIB_ASSERT(t.nc() == subnetwork_output.nc());
+                    const auto& t = *truth;
+                    DLIB_ASSERT(t.size() == subnetwork_output.k());
+                    for (const auto& tk : t) {
+                        DLIB_ASSERT(tk.nr() == subnetwork_output.nr());
+                        DLIB_ASSERT(tk.nc() == subnetwork_output.nc());
+                    }
                     memcpy(buf + i*bytes_per_plane, &t, bytes_per_plane);
                 }
 
