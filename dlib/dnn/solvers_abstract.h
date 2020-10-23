@@ -198,6 +198,73 @@ namespace dlib
 
 // ----------------------------------------------------------------------------------------
 
+    class adabelief
+    {
+        /*!
+            WHAT THIS OBJECT REPRESENTS
+                This object implements the EXAMPLE_SOLVER interface defined above.  In
+                particular, it implements the AdaBelief parameter update method described in the paper:
+                Kingma, Diederik P., and Jimmy Ba Adam. "AdaBelief Optimizer: Adapting Stepsizes by
+                the Belief in Observed Gradients." NeurIPS 2020.
+
+
+                Note that the actual learning rate and weight decay used by the solver are
+                multiplied by the per layer multipliers.  That is, the solver will call
+                get_learning_rate_multiplier(l) and get_weight_decay_multiplier(l) and
+                multiply these values with the nominal learning rate and weight decay,
+                respectively, to determine the values it will use during each step.  It is
+                also overloaded to allow additional learning rate multipliers to be applied
+                to fc_ and con_ bias parameters.
+        !*/
+
+    public:
+
+        adam(
+        );
+        /*!
+            ensures
+                - #get_weight_decay()  == 0.0005
+                - #get_momentum1()     == 0.9
+                - #get_momentum2()     == 0.999
+                - #get_epsilon()       == 1e-8
+        !*/
+
+        adam(
+            float weight_decay,
+            float momentum1,
+            float momentum2,
+            float epislon
+        );
+        /*!
+            requires
+                - weight_decay >= 0
+                - 0 <= momentum1 < 1
+                - 0 <= momentum2 < 1
+            ensures
+                - #get_weight_decay()  == weight_decay
+                - #get_momentum1()     == momentum1
+                - #get_momentum2()     == momentum2
+        !*/
+
+        float get_weight_decay () const;
+        float get_momentum1 () const;
+        float get_momentum2 () const;
+        float get_epsilon () const;
+    };
+
+    void serialize(const adabelief& item, std::ostream& out);
+    void deserialize(adam& adabelief, std::istream& in);
+    /*!
+        provides serialization support
+    !*/
+
+    std::ostream& operator<< (std::ostream& out, const adabelief& item);
+    /*!
+        Prints the solver's name and parameters to out.
+    !*/
+
+// ----------------------------------------------------------------------------------------
+
 }
 
 #endif // DLIB_DNn_SOLVERS_ABSTRACT_H_

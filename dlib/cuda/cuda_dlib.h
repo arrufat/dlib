@@ -329,6 +329,24 @@ namespace dlib
             const tensor& params_grad
         );
 
+    // ----------------------------------------------------------------------------------------
+
+        void compute_adabelief_update (
+            size_t begin,
+            size_t end,
+            tensor& s,
+            tensor& m,
+            tensor& v,
+            const float t,
+            const float learning_rate,
+            const float weight_decay,
+            const float momentum1,
+            const float momentum2,
+            const float epsilon,
+            const tensor& params,
+            const tensor& params_grad
+        );
+
     // -----------------------------------------------------------------------------------
 
         void assign_bias_gradient (
