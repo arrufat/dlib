@@ -714,6 +714,49 @@ namespace dlib
 
     // -----------------------------------------------------------------------------------
 
+        void compute_adabelief_update (
+            size_t begin,
+            size_t end,
+            tensor& s,
+            tensor& m,
+            tensor& v,
+            const float t,
+            const float learning_rate,
+            const float weight_decay,
+            const float momentum1,
+            const float momentum2,
+            const float epsilon,
+            const tensor& params,
+            const tensor& params_grad
+        )
+        {
+            DLIB_CASSERT(s.size() == m.size() &&
+                         s.size() == v.size() &&
+                         s.size() == params.size() &&
+                         s.size() == params_grad.size());
+            DLIB_CASSERT(begin <= end && end <= params.size());
+            const float alpha = learning_rate*std::sqrt(1-std::pow(momentum2,t))/(1-std::pow(momentum1, t));
+
+            // The loop is equivalent to doing this:
+            //   m = momentum1*m + (1-momentum1)    *   (weight_decay*params + params_grad);
+            //   v = momentum2*v + (1-momentum2)*squared(weight_decay*params + params_grad - m);
+            //   s = -alpha*m/(sqrt(v) + eps);
+            auto pm = m.host();
+            auto pv = v.host();
+            auto ps = s.host_write_only();
+            auto pparams = params.host();
+            auto ppgrad = params_grad.host();
+            for (size_t i = begin; i < end; ++i)
+            {
+                float g = weight_decay*pparams[i] + ppgrad[i];
+                pm[i] = momentum1*pm[i] + (1-momentum1)*g;
+                pv[i] = momentum2*pv[i] + (1-momentum2)*(g-pm[i])*(g-pm[i]);
+                ps[i] = -alpha*pm[i]/(std::sqrt(pv[i]) + epsilon);
+            }
+        }
+
+    // -----------------------------------------------------------------------------------
+
         void batch_normalize_inference (
             const double eps,
             resizable_tensor& dest,

@@ -601,6 +601,43 @@ namespace dlib { namespace tt
 
 // ----------------------------------------------------------------------------------------
 
+    void compute_adabelief_update (
+        size_t begin,
+        size_t end,
+        tensor& s,
+        tensor& m,
+        tensor& v,
+        const float t,
+        const float learning_rate,
+        const float weight_decay,
+        const float momentum1,
+        const float momentum2,
+        const float epsilon,
+        const tensor& params,
+        const tensor& params_grad
+    );
+    /*!
+        requires
+            - s.size() == m.size() = v.size() == params.size() == params_grad.size()
+            - t > 0
+            - learning_rate > 0
+            - weight_decay >= 0
+            - 0 <= momentum1 < 1
+            - 0 <= momentum2 < 1
+            - 0 <= epsilon < 1
+            - begin <= end <= params.size()
+        ensures
+            - This function implements the AdaBelief parameter update method described in the paper:
+                Kingma, Diederik P., and Jimmy Ba Adam. "AdaBelief Optimizer: Adapting Stepsizes by
+                the Belief in Observed Gradients." NeurIPS 2020.
+              Specifically, it implements the method shown as Algorithm 2.
+            - #s is the update vector that should be added to the parameters.
+            - The function only operates in the half open range [begin,end) of the memory
+              blocks of each tensor.  E.g. to make this function run on the entire tensor
+              set begin to 0 and end to params.size().
+    !*/
+
+// ----------------------------------------------------------------------------------------
     void batch_normalize_inference (
         const double eps,
         resizable_tensor& dest,
