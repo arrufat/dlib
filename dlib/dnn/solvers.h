@@ -407,7 +407,7 @@ namespace dlib
             float weight_decay_,
             float momentum1_,
             float momentum2_,
-            float epsilon_
+            float epsilon_ = 1e-8
         )
         {
             weight_decay = weight_decay_;
@@ -539,7 +539,7 @@ namespace dlib
         {
             std::string version;
             deserialize(version, in);
-            if (version != "adam2")
+            if (version != "adabelief")
                 throw serialization_error("Unexpected version found while deserializing dlib::adabelief.");
             deserialize(item.m, in);
             deserialize(item.v, in);
@@ -553,7 +553,10 @@ namespace dlib
 
         friend std::ostream& operator<< (std::ostream& out, const adabelief& item)
         {
-            out << "adam: weight_decay="<<item.get_weight_decay() << ", momentum1="<<item.get_momentum1() << ", momentum2="<<item.get_momentum2();
+            out << "adabelief: weight_decay="<<item.get_weight_decay()
+                << ", momentum1="<<item.get_momentum1()
+                << ", momentum2="<<item.get_momentum2()
+                << ", epsilon="<<item.get_epsilon();
             return out;
         }
 
