@@ -605,12 +605,12 @@ namespace dlib
                 tt::compute_adabelief_update(0, bias_offset, s, m, v, t,
                     learning_rate*get_learning_rate_multiplier(l),
                     weight_decay*get_weight_decay_multiplier(l),
-                    momentum1, momentum2, epsilon, params, params_grad);
+                    momentum1, momentum2, epsilon, decoupled_weight_decay, params, params_grad);
 
                 tt::compute_adabelief_update(bias_offset, params.size(), s, m, v, t,
                     learning_rate*get_learning_rate_multiplier(l)*l.get_bias_learning_rate_multiplier(),
                     weight_decay*get_weight_decay_multiplier(l)*l.get_bias_weight_decay_multiplier(),
-                    momentum1, momentum2, epsilon, params, params_grad);
+                    momentum1, momentum2, epsilon, decoupled_weight_decay, params, params_grad);
             }
         }
         resizable_tensor m;
