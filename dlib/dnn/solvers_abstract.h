@@ -223,10 +223,11 @@ namespace dlib
         );
         /*!
             ensures
-                - #get_weight_decay()  == 0.0005
-                - #get_momentum1()     == 0.9
-                - #get_momentum2()     == 0.999
-                - #get_epsilon()       == 1e-8
+                - #get_weight_decay()        == 0.0005
+                - #get_momentum1()           == 0.9
+                - #get_momentum2()           == 0.999
+                - #get_epsilon()             == 1e-8
+                - #is_weight_decay_decoupled == false
         !*/
 
         adam(
@@ -250,6 +251,7 @@ namespace dlib
         float get_momentum1 () const;
         float get_momentum2 () const;
         float get_epsilon () const;
+        bool is_weight_decay_decoupled () const;
     };
 
     void serialize(const adabelief& item, std::ostream& out);

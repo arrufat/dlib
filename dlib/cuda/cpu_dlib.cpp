@@ -726,6 +726,7 @@ namespace dlib
             const float momentum1,
             const float momentum2,
             const float epsilon,
+            const bool decoupled_weight_decay,
             const tensor& params,
             const tensor& params_grad
         )
@@ -746,12 +747,26 @@ namespace dlib
             auto ps = s.host_write_only();
             auto pparams = params.host();
             auto ppgrad = params_grad.host();
-            for (size_t i = begin; i < end; ++i)
+            if (decoupled_weight_decay)
             {
-                float g = weight_decay*pparams[i] + ppgrad[i];
-                pm[i] = momentum1*pm[i] + (1-momentum1)*g;
-                pv[i] = momentum2*pv[i] + (1-momentum2)*(g-pm[i])*(g-pm[i]);
-                ps[i] = -alpha*pm[i]/(std::sqrt(pv[i]) + epsilon);
+                for (size_t i = begin; i < end; ++i)
+                {
+                    float g = weight_decay*pparams[i] + ppgrad[i];
+                    pm[i] = momentum1*pm[i] + (1-momentum1)*g;
+                    pv[i] = momentum2*pv[i] + (1-momentum2)*(g-pm[i])*(g-pm[i]);
+                    ps[i] = -alpha*pm[i]/(std::sqrt(pv[i]) + epsilon);
+                }
+            }
+            else
+            {
+                for (size_t i = begin; i < end; ++i)
+                {
+                    float wd_reg = weight_decay * pparams[i];
+                    float g = wd_reg + ppgrad[i];
+                    pm[i] = momentum1*pm[i] + (1-momentum1)*g;
+                    pv[i] = momentum2*pv[i] + (1-momentum2)*(g-pm[i])*(g-pm[i]);
+                    ps[i] = -alpha*pm[i]/(std::sqrt(pv[i]) + epsilon + wd_reg);
+                }
             }
         }
 
