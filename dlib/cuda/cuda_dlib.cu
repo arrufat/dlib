@@ -1173,6 +1173,7 @@ namespace dlib
             const float momentum1,
             const float momentum2,
             const float epsilon,
+            const bool decoupled_weight_decay,
             const float* params,
             const float* params_grad
         )
@@ -1181,12 +1182,26 @@ namespace dlib
             //   m = momentum1*m + (1-momentum1)    *   (weight_decay*params + params_grad);
             //   v = momentum2*v + (1-momentum2)*squared(weight_decay*params + params_grad - m);
             //   s = -alpha*m/(sqrt(v) + eps);
-            for (auto i : grid_stride_range(begin, end))
+            if (decoupled_weight_decay)
             {
-                float g = (weight_decay*params[i] + params_grad[i]);
-                m[i] = momentum1*m[i] + (1-momentum1)*g;
-                v[i] = momentum2*v[i] + (1-momentum2)*(g-m[i])*(g-m[i]);
-                s[i] = -alpha*m[i]/(std::sqrt(v[i]) + epsilon);
+                for (auto i : grid_stride_range(begin, end))
+                {
+                    float g = (weight_decay*params[i] + params_grad[i]);
+                    m[i] = momentum1*m[i] + (1-momentum1)*g;
+                    v[i] = momentum2*v[i] + (1-momentum2)*(g-m[i])*(g-m[i]);
+                    s[i] = -alpha*m[i]/(std::sqrt(v[i]) + epsilon);
+                }
+            }
+            else
+            {
+                for (auto i : grid_stride_range(begin, end))
+                {
+                    float wd_reg = weight_decay * params[i];
+                    float g = (wd_reg + params_grad[i]);
+                    m[i] = momentum1*m[i] + (1-momentum1)*g;
+                    v[i] = momentum2*v[i] + (1-momentum2)*(g-m[i])*(g-m[i]);
+                    s[i] = -alpha*m[i]/(std::sqrt(v[i]) + epsilon + wd_reg);
+                }
             }
         }
 
@@ -1202,6 +1217,7 @@ namespace dlib
             const float momentum1,
             const float momentum2,
             const float epsilon,
+            const bool decoupled_weight_decay,
             const tensor& params,
             const tensor& params_grad
         )
@@ -1215,7 +1231,7 @@ namespace dlib
 
             launch_kernel(_cuda_compute_adabelief_update,max_jobs(end-begin),
                     begin, end, s.device(), m.device(), v.device(), alpha, weight_decay,
-                    momentum1, momentum2, epsilon, params.device(), params_grad.device());
+                    momentum1, momentum2, epsilon, decoupled_weight_decay, params.device(), params_grad.device());
         }
 
     // -----------------------------------------------------------------------------------

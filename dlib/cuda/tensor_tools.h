@@ -613,6 +613,7 @@ namespace dlib { namespace tt
         const float momentum1,
         const float momentum2,
         const float epsilon,
+        const bool decoupled_weight_decay,
         const tensor& params,
         const tensor& params_grad
     );
