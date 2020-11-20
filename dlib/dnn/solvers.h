@@ -273,9 +273,6 @@ namespace dlib
         const tensor& operator() (
             const float learning_rate,
             const con_<_num_filters,_nr,_nc,_stride_y,_stride_x,_padding_y,_padding_x>& l,
-
-            bool is_weight_decay_decoupled (
-            ) const { return decoupled_weight_decay; }
             const tensor& params_grad
         )
         {
@@ -353,9 +350,6 @@ namespace dlib
         void update_considering_bias(
             const float learning_rate,
             const layer_type& l,
-
-            bool is_weight_decay_decoupled (
-            ) const { return decoupled_weight_decay; }
             const tensor& params_grad,
             unsigned long bias_offset
         )
@@ -374,9 +368,6 @@ namespace dlib
 
             ++t;
 
-            bool is_weight_decay_decoupled (
-            ) const { return decoupled_weight_decay; }
-
             if (l.get_bias_learning_rate_multiplier() == 1 && l.get_bias_weight_decay_multiplier() == 1)
             {
                 tt::compute_adam_update(0, params.size(), s, m, v, t,
@@ -386,9 +377,6 @@ namespace dlib
             }
             else
             {
-
-                bool is_weight_decay_decoupled (
-                ) const { return decoupled_weight_decay; }
                 tt::compute_adam_update(0, bias_offset, s, m, v, t,
                     learning_rate*get_learning_rate_multiplier(l),
                     weight_decay*get_weight_decay_multiplier(l), 
