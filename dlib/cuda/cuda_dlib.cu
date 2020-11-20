@@ -1199,7 +1199,7 @@ namespace dlib
                     float g = params_grad[i];
                     m[i] = momentum1*m[i] + (1-momentum1)*g;
                     v[i] = momentum2*v[i] + (1-momentum2)*(g-m[i])*(g-m[i]);
-                    s[i] = -alpha*m[i]/(std::sqrt(v[i]) + epsilon) + weight_decay*params[i];
+                    s[i] = -alpha*m[i]/(std::sqrt(v[i]) + epsilon) - weight_decay*params[i];
                 }
             }
         }
