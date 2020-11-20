@@ -1196,11 +1196,10 @@ namespace dlib
             {
                 for (auto i : grid_stride_range(begin, end))
                 {
-                    float wd_reg = weight_decay * params[i];
-                    float g = (wd_reg + params_grad[i]);
+                    float g = params_grad[i];
                     m[i] = momentum1*m[i] + (1-momentum1)*g;
                     v[i] = momentum2*v[i] + (1-momentum2)*(g-m[i])*(g-m[i]);
-                    s[i] = -alpha*m[i]/(std::sqrt(v[i]) + epsilon + wd_reg);
+                    s[i] = -alpha*m[i]/(std::sqrt(v[i]) + epsilon) + weight_decay*params[i];
                 }
             }
         }
