@@ -219,7 +219,7 @@ namespace dlib
 
     public:
 
-        adam(
+        adabelief(
         );
         /*!
             ensures
@@ -230,11 +230,12 @@ namespace dlib
                 - #is_weight_decay_decoupled == false
         !*/
 
-        adam(
+        adabelief(
             float weight_decay,
             float momentum1,
             float momentum2,
-            float epislon
+            float epislon,
+            bool weight_decay_decoupled
         );
         /*!
             requires
