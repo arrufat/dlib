@@ -598,7 +598,7 @@ namespace dlib
                 tt::compute_adabelief_update(0, params.size(), s, m, v, t,
                     learning_rate*get_learning_rate_multiplier(l),
                     weight_decay*get_weight_decay_multiplier(l),
-                    momentum1, momentum2, epsilon, params, params_grad);
+                    momentum1, momentum2, epsilon, decoupled_weight_decay, params, params_grad);
             }
             else
             {
