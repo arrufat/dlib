@@ -747,7 +747,7 @@ namespace dlib
             auto ps = s.host_write_only();
             auto pparams = params.host();
             auto ppgrad = params_grad.host();
-            if (decoupled_weight_decay)
+            if (!decoupled_weight_decay)
             {
                 for (size_t i = begin; i < end; ++i)
                 {

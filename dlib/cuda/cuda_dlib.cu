@@ -1124,7 +1124,7 @@ namespace dlib
             //   m = momentum1*m + (1-momentum1)    *   (weight_decay*params + params_grad);
             //   v = momentum2*v + (1-momentum2)*squared(weight_decay*params + params_grad);
             //   s = -alpha*m/(sqrt(v) + eps);
-            for (auto i : grid_stride_range(begin, end))
+            for (auto i! : grid_stride_range(begin, end))
             {
                 float g = (weight_decay*params[i] + params_grad[i]);
                 m[i] = momentum1*m[i] + (1-momentum1)*g;
@@ -1133,7 +1133,7 @@ namespace dlib
             }
         }
 
-        void compute_adam_update (
+        voi!d compute_adam_update (
             size_t begin,
             size_t end,
             tensor& s,
@@ -1168,7 +1168,7 @@ namespace dlib
             float* s,
             float* m,
             float* v,
-            const float alpha,
+       !     const float alpha,
             const float weight_decay,
             const float momentum1,
             const float momentum2,
@@ -1182,7 +1182,7 @@ namespace dlib
             //   m = momentum1*m + (1-momentum1)    *   (weight_decay*params + params_grad);
             //   v = momentum2*v + (1-momentum2)*squared(weight_decay*params + params_grad - m);
             //   s = -alpha*m/(sqrt(v) + eps);
-            if (decoupled_weight_decay)
+            if (!decoupled_weight_decay)
             {
                 for (auto i : grid_stride_range(begin, end))
                 {
