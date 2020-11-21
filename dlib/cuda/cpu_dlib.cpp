@@ -737,6 +737,7 @@ namespace dlib
                          s.size() == params_grad.size());
             DLIB_CASSERT(begin <= end && end <= params.size());
             const float alpha = learning_rate*std::sqrt(1-std::pow(momentum2,t))/(1-std::pow(momentum1, t));
+            const auto dwd = static_cast<int>(decoupled_weight_decay);
 
             // The loop is equivalent to doing this:
             //   m = momentum1*m + (1-momentum1)    *   (weight_decay*params + params_grad);
@@ -747,25 +748,12 @@ namespace dlib
             auto ps = s.host_write_only();
             auto pparams = params.host();
             auto ppgrad = params_grad.host();
-            if (!decoupled_weight_decay)
+            for (size_t i = begin; i < end; ++i)
             {
-                for (size_t i = begin; i < end; ++i)
-                {
-                    float g = weight_decay*pparams[i] + ppgrad[i];
-                    pm[i] = momentum1*pm[i] + (1-momentum1)*g;
-                    pv[i] = momentum2*pv[i] + (1-momentum2)*(g-pm[i])*(g-pm[i]);
-                    ps[i] = -alpha*pm[i]/(std::sqrt(pv[i]) + epsilon);
-                }
-            }
-            else
-            {
-                for (size_t i = begin; i < end; ++i)
-                {
-                    float g = ppgrad[i];
-                    pm[i] = momentum1*pm[i] + (1-momentum1)*g;
-                    pv[i] = momentum2*pv[i] + (1-momentum2)*(g-pm[i])*(g-pm[i]);
-                    ps[i] = -alpha*pm[i]/(std::sqrt(pv[i]) + epsilon) - weight_decay*pparams[i];
-                }
+                float g = (1-dwd)*weight_decay*pparams[i] + ppgrad[i];
+                pm[i] = momentum1*pm[i] + (1-momentum1)*g;
+                pv[i] = momentum2*pv[i] + (1-momentum2)*(g-pm[i])*(g-pm[i]);
+                ps[i] = -alpha*pm[i]/(std::sqrt(pv[i]) + epsilon) - dwd*weight_decay*pparams[i];
             }
         }
 
