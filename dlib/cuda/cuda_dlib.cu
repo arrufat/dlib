@@ -1173,11 +1173,12 @@ namespace dlib
             const float momentum1,
             const float momentum2,
             const float epsilon,
-            const int dwd,
+            const bool decoupled_weight_decay,
             const float* params,
             const float* params_grad
         )
         {
+            const auto dwd = static_cast<int>(decoupled_weight_decay);
             // The loop is equivalent to doing this:
             //   m = momentum1*m + (1-momentum1)    *   (weight_decay*params + params_grad);
             //   v = momentum2*v + (1-momentum2)*squared(weight_decay*params + params_grad - m);
@@ -1187,7 +1188,7 @@ namespace dlib
                 float g = (1-dwd)*weight_decay*params[i] + params_grad[i];
                 m[i] = momentum1*m[i] + (1-momentum1)*g;
                 v[i] = momentum2*v[i] + (1-momentum2)*(g-m[i])*(g-m[i]);
-                s[i] = -alpha*m[i]/(std::sqrt(v[i]) + epsilon) - dwd*weight_decay*params[i];
+                s[i] = -alpha*m[i]/(std::sqrt(v[i] + epsilon) + epsilon) - dwd*weight_decay*params[i];
             }
         }
 
@@ -1214,10 +1215,9 @@ namespace dlib
                          s.size() == params_grad.size());
             DLIB_CASSERT(begin <= end && end <= params.size());
             const float alpha = learning_rate*std::sqrt(1-std::pow(momentum2,t))/(1-std::pow(momentum1, t));
-            const auto dwd = static_cast<int>(decoupled_weight_decay);
             launch_kernel(_cuda_compute_adabelief_update,max_jobs(end-begin),
                     begin, end, s.device(), m.device(), v.device(), alpha, weight_decay,
-                    momentum1, momentum2, epsilon, dwd, params.device(), params_grad.device());
+                    momentum1, momentum2, epsilon, decoupled_weight_decay, params.device(), params_grad.device());
         }
 
     // -----------------------------------------------------------------------------------

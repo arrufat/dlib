@@ -753,7 +753,7 @@ namespace dlib
                 float g = (1-dwd)*weight_decay*pparams[i] + ppgrad[i];
                 pm[i] = momentum1*pm[i] + (1-momentum1)*g;
                 pv[i] = momentum2*pv[i] + (1-momentum2)*(g-pm[i])*(g-pm[i]);
-                ps[i] = -alpha*pm[i]/(std::sqrt(pv[i]) + epsilon) - dwd*weight_decay*pparams[i];
+                ps[i] = -alpha*pm[i]/(std::sqrt(pv[i] + epsilon) + epsilon) - dwd*weight_decay*pparams[i];
             }
         }
 
