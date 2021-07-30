@@ -3717,7 +3717,10 @@ namespace dlib
 
                             // Incur loss for the boxes that are below a certain IoU threshold with any truth box
                             if (best_iou < options.iou_ignore_threshold)
+                            {
+                                loss += -std::log(1 - out_data[o_idx]);
                                 g[o_idx] = out_data[o_idx];
+                            }
                         }
                     }
                 }
@@ -3772,6 +3775,7 @@ namespace dlib
                             const auto o_idx = tensor_index(output_tensor, n, a * num_feats + 4, r, c);
 
                             // This grid cell should detect an object
+                            loss += -options.lambda_obj * std::log(out_data[o_idx]);
                             g[o_idx] = options.lambda_obj * (out_data[o_idx] - 1);
 
                             // Get the truth box target values
@@ -3780,30 +3784,40 @@ namespace dlib
                             const double tw = truth_box.rect.width() / (anchors[a].width + truth_box.rect.width());
                             const double th = truth_box.rect.height() / (anchors[a].height + truth_box.rect.height());
 
+                            const double dx = out_data[x_idx] - tx;
+                            const double dy = out_data[y_idx] - ty;
+                            const double dw = out_data[w_idx] - tw;
+                            const double dh = out_data[h_idx] - th;
+
                             // Scale regression error according to the truth size
-                            const double scale_box = 2 - truth_box.rect.area() / (input_tensor.nr() * input_tensor.nc());
+                            const double scale = options.lambda_box * (2 - truth_box.rect.area() / (input_tensor.nr() * input_tensor.nc()));
+
+                            loss += scale * (dx * dx + dy * dy + dw * dw + dh * dh);
 
                             // Compute the gradient for the box coordinates
-                            g[x_idx] = options.lambda_box * scale_box * (out_data[x_idx] - tx);
-                            g[y_idx] = options.lambda_box * scale_box * (out_data[y_idx] - ty);
-                            g[w_idx] = options.lambda_box * scale_box * (out_data[w_idx] - tw);
-                            g[h_idx] = options.lambda_box * scale_box * (out_data[h_idx] - th);
+                            g[x_idx] = scale * dx;
+                            g[y_idx] = scale * dy;
+                            g[w_idx] = scale * dw;
+                            g[h_idx] = scale * dh;
 
                             // Compute the classification error
                             for (long k = 0; k < num_classes; ++k)
                             {
                                 const auto c_idx = tensor_index(output_tensor, n, a * num_feats + 5 + k, r, c);
                                 if (truth_box.label == options.labels[k])
+                                {
+                                    loss += -options.lambda_cls * std::log(out_data[c_idx]);
                                     g[c_idx] = options.lambda_cls * (out_data[c_idx] - 1);
+                                }
                                 else
+                                {
+                                    loss += -options.lambda_cls * std::log(1 - out_data[o_idx]);
                                     g[c_idx] = options.lambda_cls * out_data[c_idx];
+                                }
                             }
                         }
                     }
                 }
-
-                // Compute the L2 loss
-                loss += length_squared(rowm(mat(grad), n));
             }
         };
     }
