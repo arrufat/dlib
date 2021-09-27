@@ -10,6 +10,8 @@
 #include <dlib/image_io.h>
 #include <dlib/matrix.h>
 #include <dlib/rand.h>
+#include <dlib/compress_stream.h>
+#include <dlib/base64.h>
 
 #include "tester.h"
 
@@ -2254,7 +2256,55 @@ namespace
             }
         }
     }
-    
+
+    void test_letterbox_image()
+    {
+        print_spinner();
+        rgb_pixel black(0, 0, 0);
+        rgb_pixel white(255, 255, 255);
+        matrix<rgb_pixel> img_s(40, 60);
+        matrix<rgb_pixel> img_d;
+        assign_all_pixels(img_s, white);
+        const auto tform = letterbox_image(img_s, img_d, 30, interpolate_nearest_neighbor());
+        DLIB_TEST(tform.get_m() == identity_matrix<double>(2) * 0.5);
+        DLIB_TEST(tform.get_b() == dpoint(0, 5));
+
+        // manually generate the target image
+        matrix<rgb_pixel> img_t(30, 30);
+        assign_all_pixels(img_t, rgb_pixel(0, 0, 0));
+        matrix<rgb_pixel> img_w(20, 30);
+        assign_all_pixels(img_w, rgb_pixel(255, 255, 255));
+        rectangle r (0, 5, 30 - 1, 25 - 1);
+        auto si = sub_image(img_t, r);
+        assign_image(si, img_w);
+        DLIB_TEST(img_d == img_t);
+    }
+
+    void test_draw_string()
+    {
+        print_spinner();
+        matrix<rgb_pixel> image{48, 48};
+        assign_all_pixels(image, rgb_pixel{0, 0, 0});
+        draw_string(image, point{10, 15}, string{"cat"}, rgb_pixel{255, 255, 255});
+
+        matrix<rgb_pixel> result;
+        const std::string data{"gQgLudERwR0JqP9kUiitFNDYSO9rdZzdmeDmricAlM5f5RBqzTlaW6Lp704mTXJq/WXHTQ84wWnGAA=="};
+        ostringstream sout;
+        istringstream sin;
+        base64 base64_coder;
+        compress_stream::kernel_1ea compressor;
+        sin.str(data);
+        base64_coder.decode(sin, sout);
+        sin.clear();
+        sin.str(sout.str());
+        sout.clear();
+        sout.str("");
+        compressor.decompress(sin, sout);
+        sin.clear();
+        sin.str(sout.str());
+        deserialize(result, sin);
+        DLIB_TEST(image == result);
+    }
 
 // ----------------------------------------------------------------------------------------
 
@@ -2359,6 +2409,8 @@ namespace
             test_null_rotate_image_with_interpolation();
             test_null_rotate_image_with_interpolation_quadratic();
             test_interpolate_bilinear();
+            test_letterbox_image();
+            test_draw_string();
         }
     } a;
 

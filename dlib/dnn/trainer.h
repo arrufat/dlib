@@ -1121,7 +1121,7 @@ namespace dlib
             }
 
             // if we haven't seen much data yet then just say false.
-            if (gradient_updates_since_last_sync < 30)
+            if (previous_loss_values_to_keep_until_disk_sync.size() < 30)
                 return false;
 
             // if the loss is very likely to be increasing then return true
@@ -1363,7 +1363,11 @@ namespace dlib
         net_type temp = trainer.get_net(); // make a copy so that we can clean it without mutating the trainer's net.
         temp.clean();
         serialize(temp, sout);
-        out << "  net size: " << sout.str().size()/1024.0/1024.0 << "MB" << endl;
+        out << "  net size: " << sout.str().size()/1024.0/1024.0 << " MiB";
+        const auto num_params = count_parameters(temp);
+        if (num_params > 0)
+            out << " (" << num_params << " parameters)";
+        out << endl;
         // Don't include the loss params in the hash since we print them on the next line.
         // They also aren't really part of the "architecture" of the network.
         out << "  net architecture hash: " << md5(cast_to_string(trainer.get_net().subnet())) << endl;

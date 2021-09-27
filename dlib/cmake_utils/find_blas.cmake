@@ -86,6 +86,7 @@ if (UNIX OR MINGW)
 
    if (SIZE_OF_VOID_PTR EQUAL 8)
       set( mkl_search_path
+         /opt/intel/oneapi/mkl/latest/lib/intel64
          /opt/intel/mkl/*/lib/em64t
          /opt/intel/mkl/lib/intel64
          /opt/intel/lib/intel64
@@ -99,6 +100,7 @@ if (UNIX OR MINGW)
       mark_as_advanced(mkl_intel)
    else()
       set( mkl_search_path
+         /opt/intel/oneapi/mkl/latest/lib/ia32
          /opt/intel/mkl/*/lib/32
          /opt/intel/mkl/lib/ia32
          /opt/intel/lib/ia32
@@ -114,6 +116,7 @@ if (UNIX OR MINGW)
 
    # Get mkl_include_dir
    set(mkl_include_search_path
+      /opt/intel/oneapi/mkl/latest/include
       /opt/intel/mkl/include
       /opt/intel/include
       )
@@ -313,9 +316,12 @@ elseif(WIN32 AND NOT MINGW)
          "C:/Program Files/Intel/Composer XE/mkl/lib/intel64"
          "C:/Program Files/Intel/Composer XE/tbb/lib/intel64/vc14"
          "C:/Program Files/Intel/Composer XE/compiler/lib/intel64"
+         "C:/Program Files (x86)/Intel/oneAPI/mkl/*/lib/intel64"
+         "C:/Program Files (x86)/Intel/oneAPI/compiler/*/windows/compiler/lib/intel64_win"
          )
       set (mkl_redist_path
          "C:/Program Files (x86)/IntelSWTools/compilers_and_libraries/windows/redist/intel64/compiler" 
+         "C:/Program Files (x86)/Intel/oneAPI/compiler/*/windows/redist/intel64_win/compiler"
          )
       find_library(mkl_intel  mkl_intel_lp64 ${mkl_search_path})
    else()
@@ -333,9 +339,13 @@ elseif(WIN32 AND NOT MINGW)
          "C:/Program Files/Intel/Composer XE/mkl/lib/ia32"
          "C:/Program Files/Intel/Composer XE/tbb/lib/ia32/vc14"
          "C:/Program Files/Intel/Composer XE/compiler/lib/ia32"
+         "C:/Program Files (x86)/Intel/oneAPI/mkl/*/lib/ia32"
+         "C:/Program Files (x86)/Intel/oneAPI/compiler/*/windows/compiler/lib/ia32_win"
+
          )
       set (mkl_redist_path
-         "C:/Program Files (x86)/IntelSWTools/compilers_and_libraries/windows/redist/ia32/compiler" 
+         "C:/Program Files (x86)/IntelSWTools/compilers_and_libraries/windows/redist/ia32/compiler"
+         "C:/Program Files (x86)/Intel/oneAPI/compiler/*/windows/redist/ia32_win/compiler"
          )
       find_library(mkl_intel  mkl_intel_c ${mkl_search_path})
    endif()
@@ -351,6 +361,7 @@ elseif(WIN32 AND NOT MINGW)
       "C:/Program Files (x86)/Intel/Composer XE/compiler/include"
       "C:/Program Files/Intel/Composer XE/mkl/include"
       "C:/Program Files/Intel/Composer XE/compiler/include"
+      "C:/Program Files (x86)/Intel/oneAPI/mkl/*/include"
       )
    find_path(mkl_include_dir mkl_version.h ${mkl_include_search_path})
    mark_as_advanced(mkl_include_dir)
