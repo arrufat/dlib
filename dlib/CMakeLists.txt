@@ -564,7 +564,7 @@ if (NOT TARGET dlib)
          include(cmake_utils/find_libwebp.cmake)
          if (WEBP_FOUND)
             include_directories(${WEBP_INCLUDE_DIR})
-            set (dlib_needed_libraries ${dlib_needed_libraries} ${WEBP_LIBRARY})
+            set (dlib_needed_libraries ${dlib_needed_libraries} ${WEBP_LIBRARY} ${WEBPMUX_LIBRARY} ${WEBPDEMUX_LIBRARY})
             set(source_files ${source_files}
                image_loader/webp_loader.cpp
                image_saver/save_webp.cpp
