@@ -22,9 +22,10 @@ namespace dlib
         webp_loader(const std::string& filename);
         webp_loader(const dlib::file& f);
         webp_loader(const unsigned char* imgbuffer, size_t buffersize);
+        ~webp_loader();
 
         template<typename image_type>
-        void get_image(image_type& image) const
+        void get_image(image_type& image, const int frame_num = 0) const
         {
 #ifndef DLIB_WEBP_SUPPORT
             /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -48,7 +49,7 @@ namespace dlib
                 if (pixel_traits<pixel_type>::bgr_layout)
                     read_bgra(output, output_size, stride);
                 else
-                    read_rgba(output, output_size, stride);
+                    read_rgba(output, output_size, stride, frame_num);
                 return;
             }
             if (pixel_traits<pixel_type>::rgb)
@@ -78,17 +79,52 @@ namespace dlib
             }
         }
 
+        template<typename image_type>
+        void get_frames(std::vector<image_type>& images) const
+        {
+
+            images.resize(num_frames_);
+            for (size_t i = 0; i < images.size(); ++i)
+            {
+                image_view<image_type> vimg(images[i]);
+                vimg.set_size(height_, width_);
+                typedef typename image_traits<image_type>::pixel_type pixel_type;
+                if (pixel_traits<pixel_type>::rgb_alpha)
+                {
+                    if (pixel_traits<pixel_type>::bgr_layout)
+                        assign_all_pixels(vimg, bgr_alpha_pixel(0, 0, 0, 0));
+                    else
+                        assign_all_pixels(vimg, rgb_alpha_pixel(0, 0, 0, 0));
+                    get_image(images[i], i);
+                }
+                else if (pixel_traits<pixel_type>::rgb)
+                {
+                    if (pixel_traits<pixel_type>::bgr_layout)
+                        assign_all_pixels(vimg, bgr_pixel(0, 0, 0));
+                    else
+                        assign_all_pixels(vimg, rgb_pixel(0, 0, 0));
+                    get_image(images[i], i);
+                }
+                else
+                {
+                    return;
+                }
+            }
+        }
+
     private:
         void get_info();
         void read_bgra(unsigned char *out, const size_t out_size, const int out_stride) const;
         void read_bgr(unsigned char *out, const size_t out_size, const int out_stride) const;
-        void read_rgba(unsigned char *out, const size_t out_size, const int out_stride) const;
+        void read_rgba(unsigned char *out, const size_t out_size, const int out_stride, const int frame_number = 0) const;
         void read_rgb(unsigned char *out, const size_t out_size, const int out_stride) const;
         void read_argb(unsigned char *out, const size_t out_size, const int out_stride) const;
 
         int height_;
         int width_;
+        int num_frames_;
         std::vector<unsigned char> data_;
+        void* demuxer;
     };
 
 // ----------------------------------------------------------------------------------------
@@ -99,7 +135,7 @@ namespace dlib
     void load_webp (
         image_type& image,
         const std::string& file_name
-   )
+    )
     {
         webp_loader(file_name).get_image(image);
     }
@@ -111,7 +147,7 @@ namespace dlib
         image_type& image,
         const unsigned char* imgbuff,
         size_t imgbuffsize
-   )
+    )
     {
         webp_loader(imgbuff, imgbuffsize).get_image(image);
     }
@@ -123,12 +159,24 @@ namespace dlib
         image_type& image,
         const char* imgbuff,
         size_t imgbuffsize
-   )
+    )
     {
         webp_loader(reinterpret_cast<const unsigned char*>(imgbuff), imgbuffsize).get_image(image);
     }
 
 // ----------------------------------------------------------------------------------------
+
+    template <
+        typename image_type
+        >
+    void load_webp (
+        std::vector<image_type>& images,
+        const std::string& file_name
+    )
+    {
+        webp_loader(file_name).get_frames(images);
+    }
+
 
 }
 
