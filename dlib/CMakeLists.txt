@@ -169,6 +169,8 @@ if (NOT TARGET dlib)
       "Enable this if you have MKL installed and want to use the sequential version instead of the multi-core version." )
    set (DLIB_USE_MKL_WITH_TBB_STR
       "Enable this if you have MKL installed and want to use the tbb version instead of the openmp version." )
+   set (DLIB_USE_ONEDNN_STR
+      "Enable this if you want to use Intel's OneDNN library" )
    set (DLIB_PNG_SUPPORT_STR
       "Disable this if you don't want to link against libpng" )
    set (DLIB_GIF_SUPPORT_STR
@@ -195,6 +197,7 @@ if (NOT TARGET dlib)
    toggle_preprocessor_switch(DLIB_ENABLE_STACK_TRACE)
    option(DLIB_USE_MKL_SEQUENTIAL ${DLIB_USE_MKL_SEQUENTIAL_STR} OFF)
    option(DLIB_USE_MKL_WITH_TBB ${DLIB_USE_MKL_WITH_TBB_STR} OFF)
+   option(DLIB_USE_ONEDNN ${DLIB_USE_ONEDNN_STR} OFF)
 
    if(DLIB_ENABLE_ASSERTS)
       # Set these variables so they are set in the config.h.in file when dlib
@@ -258,6 +261,7 @@ if (NOT TARGET dlib)
    toggle_preprocessor_switch(DLIB_GIF_SUPPORT) 
    #toggle_preprocessor_switch(DLIB_USE_FFTW)
    toggle_preprocessor_switch(DLIB_USE_MKL_FFT)
+   toggle_preprocessor_switch(DLIB_USE_ONEDNN)
 
 
    set(source_files
@@ -841,6 +845,12 @@ if (NOT TARGET dlib)
          cuda_add_library(dlib ${source_files} )
       else()
          add_library(dlib ${source_files} )
+      endif()
+
+      if (DLIB_USE_ONEDNN)
+	find_package(dnnl QUIET)
+	message(STATUS "Found OneDNN v${dnnl_VERSION}")
+        set(dlib_needed_libraries ${dlib_needed_libraries} dnnl)
       endif()
 
    endif ()  ##### end of if NOT DLIB_ISO_CPP_ONLY ##########################################################
