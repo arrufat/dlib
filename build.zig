@@ -3,14 +3,25 @@ const std = @import("std");
 pub fn build(b: *std.build.Builder) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const cflags = [_][]const u8{
+        "-std=c89",
+        "-fno-sanitize=undefined",
+    };
+    const cppflags = [_][]const u8{
+        "-std=c++14",
+        "-fPIC",
+        "-fno-sanitize=undefined",
+    };
 
     const zlib = b.addStaticLibrary(.{
         .name = "z",
         .target = target,
         .optimize = optimize,
     });
+    zlib.strip = true;
+    zlib.optimize = .ReleaseFast;
     zlib.linkLibC();
-    zlib.addCSourceFiles(&.{
+    zlib.addCSourceFiles(.{ .files = &.{
         "dlib/external/zlib/adler32.c",
         "dlib/external/zlib/crc32.c",
         "dlib/external/zlib/deflate.c",
@@ -26,7 +37,7 @@ pub fn build(b: *std.build.Builder) void {
         "dlib/external/zlib/gzlib.c",
         "dlib/external/zlib/gzread.c",
         "dlib/external/zlib/gzwrite.c",
-    }, &.{"-std=c89"});
+    }, .flags = &cflags });
     zlib.installHeader("dlib/external/zlib/zconf.h", "zconf.h");
     zlib.installHeader("dlib/external/zlib/zlib.h", "zlib.h");
     b.installArtifact(zlib);
@@ -36,8 +47,10 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
+    libpng.strip = true;
+    libpng.optimize = .ReleaseFast;
     libpng.linkLibC();
-    libpng.addCSourceFiles(&.{
+    libpng.addCSourceFiles(.{ .files = &.{
         "dlib/external/libpng/arm/arm_init.c",
         "dlib/external/libpng/arm/filter_neon_intrinsics.c",
         "dlib/external/libpng/arm/palette_neon_intrinsics.c",
@@ -56,7 +69,7 @@ pub fn build(b: *std.build.Builder) void {
         "dlib/external/libpng/pngwrite.c",
         "dlib/external/libpng/pngwtran.c",
         "dlib/external/libpng/pngwutil.c",
-    }, &.{"-std=c89"});
+    }, .flags = &cflags });
     libpng.linkLibrary(zlib);
     libpng.installHeader("dlib/external/libpng/pnglibconf.h", "pnglibconf.h");
     libpng.installHeader("dlib/external/libpng/pngconf.h", "pngconf.h");
@@ -69,8 +82,10 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
+    libjpeg.strip = true;
+    libjpeg.optimize = .ReleaseFast;
     libjpeg.linkLibC();
-    libjpeg.addCSourceFiles(&.{
+    libjpeg.addCSourceFiles(.{ .files = &.{
         "dlib/external/libjpeg/jaricom.c",
         "dlib/external/libjpeg/jcapimin.c",
         "dlib/external/libjpeg/jcapistd.c",
@@ -115,7 +130,7 @@ pub fn build(b: *std.build.Builder) void {
         "dlib/external/libjpeg/jquant1.c",
         "dlib/external/libjpeg/jquant2.c",
         "dlib/external/libjpeg/jutils.c",
-    }, &.{"-std=c89"});
+    }, .flags = &cflags });
     libjpeg.installHeader("dlib/external/libjpeg/jconfig.h", "jconfig.h");
     libjpeg.installHeader("dlib/external/libjpeg/jmorecfg.h", "jmorecfg.h");
     libjpeg.installHeader("dlib/external/libjpeg/jpeglib.h", "jpeglib.h");
@@ -126,9 +141,10 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
+    if (dlib.optimize != .Debug)
+        dlib.strip = true;
     dlib.linkLibCpp();
-    dlib.addCSourceFiles(&.{
-        // "dlib/all/source.cpp",
+    dlib.addCSourceFiles(.{ .files = &.{
         "dlib/base64/base64_kernel_1.cpp",
         "dlib/bigint/bigint_kernel_1.cpp",
         "dlib/bigint/bigint_kernel_2.cpp",
@@ -172,6 +188,10 @@ pub fn build(b: *std.build.Builder) void {
         "dlib/image_saver/save_png.cpp",
         "dlib/image_loader/jpeg_loader.cpp",
         "dlib/image_saver/save_jpeg.cpp",
+        "dlib/image_loader/jpeg_loader.cpp",
+        "dlib/image_saver/save_jpeg.cpp",
+        "dlib/image_loader/webp_loader.cpp",
+        "dlib/image_saver/save_webp.cpp",
         "dlib/gui_widgets/fonts.cpp",
         "dlib/gui_widgets/widgets.cpp",
         "dlib/gui_widgets/drawable.cpp",
@@ -188,16 +208,93 @@ pub fn build(b: *std.build.Builder) void {
         "dlib/svm/auto.cpp",
         "dlib/global_optimization/global_function_search.cpp",
         "dlib/filtering/kalman_filter.cpp",
-    }, &.{
-        "-std=c++14",
-        "-DDLIB_PNG_SUPPORT=1",
-        "-DDLIB_JPEG_SUPPORT=1",
-    });
-    dlib.installHeadersDirectory("dlib", "dlib");
+    }, .flags = &cppflags });
+    dlib.defineCMacro("DLIB_PNG_SUPPORT", "1");
+    dlib.defineCMacro("DLIB_JPEG_SUPPORT", "1");
+    dlib.defineCMacro("DLIB_WEBP_SUPPORT", "1");
+    dlib.defineCMacro("DLIB_ENABLE_ASSERTS", "1");
+    dlib.defineCMacro("DLIB_ENABLE_STACK_TRACE", "1");
+    dlib.defineCMacro("USE_AVX_INSTRUCTIONS", "1");
+    dlib.defineCMacro("USE_SS2_INSTRUCTIONS", "1");
+    dlib.defineCMacro("USE_SS4_INSTRUCTIONS", "1");
+    dlib.defineCMacro("DLIB_JPEG_STATIC", "");
     dlib.linkLibrary(libpng);
     dlib.linkLibrary(libjpeg);
+    dlib.installHeadersDirectory("dlib", "dlib");
+    dlib.linkSystemLibrary("libwebp");
     dlib.linkSystemLibrary("pthread");
     dlib.linkSystemLibrary("X11");
-
+    dlib.addSystemIncludePath(.{ .path = "/usr/include" });
     b.installArtifact(dlib);
+
+    const examples = [_][]const u8{
+        "assignment_learning_ex",
+        "max_cost_assignment_ex",
+        "image_ex",
+    };
+
+    for (examples) |example| {
+        const exe = b.addExecutable(.{
+            .name = example,
+            .target = target,
+            .optimize = optimize,
+        });
+        exe.addCSourceFile(.{
+            .file = .{ .path = b.fmt("examples/{s}.cpp", .{example}) },
+            .flags = &cppflags,
+        });
+        exe.linkLibCpp();
+        exe.linkLibrary(dlib);
+        exe.defineCMacro("DLIB_PNG_SUPPORT", "1");
+        exe.defineCMacro("DLIB_JPEG_SUPPORT", "1");
+        exe.defineCMacro("DLIB_WEBP_SUPPORT", "1");
+        exe.defineCMacro("DLIB_ENABLE_ASSERTS", "1");
+        exe.defineCMacro("DLIB_ENABLE_STACK_TRACE", "1");
+        exe.strip = true;
+        b.installArtifact(exe);
+    }
+
+    const pybind11 = b.addSharedLibrary(.{
+        .name = "pybind11",
+        .target = target,
+        .optimize = optimize,
+    });
+    if (pybind11.optimize != .Debug)
+        pybind11.strip = true;
+    pybind11.linkLibCpp();
+    pybind11.addIncludePath(.{ .path = "/usr/include/python3.11/" });
+    pybind11.addIncludePath(.{ .path = "dlib/external/pybind11/include" });
+    pybind11.addCSourceFiles(.{ .files = &.{
+        "tools/python/src/dlib.cpp",
+        "tools/python/src/matrix.cpp",
+        "tools/python/src/vector.cpp",
+        "tools/python/src/svm_c_trainer.cpp",
+        "tools/python/src/svm_rank_trainer.cpp",
+        "tools/python/src/decision_functions.cpp",
+        "tools/python/src/other.cpp",
+        "tools/python/src/basic.cpp",
+        "tools/python/src/cca.cpp",
+        "tools/python/src/sequence_segmenter.cpp",
+        "tools/python/src/svm_struct.cpp",
+        "tools/python/src/image.cpp",
+        "tools/python/src/image2.cpp",
+        "tools/python/src/image3.cpp",
+        "tools/python/src/image4.cpp",
+        "tools/python/src/rectangles.cpp",
+        "tools/python/src/object_detection.cpp",
+        "tools/python/src/shape_predictor.cpp",
+        "tools/python/src/correlation_tracker.cpp",
+        "tools/python/src/face_recognition.cpp",
+        "tools/python/src/cnn_face_detector.cpp",
+        "tools/python/src/global_optimization.cpp",
+        "tools/python/src/image_dataset_metadata.cpp",
+        "tools/python/src/numpy_returns.cpp",
+        "tools/python/src/line.cpp",
+    }, .flags = &cppflags });
+    pybind11.defineCMacro("DLIB_PNG_SUPPORT", "1");
+    pybind11.defineCMacro("DLIB_JPEG_SUPPORT", "1");
+    pybind11.defineCMacro("DLIB_NO_GUI_SUPPORT", "1");
+    pybind11.defineCMacro("DLIB_NO_ABORT_ON_2ND_FATAL_ERROR", null);
+    pybind11.linkLibrary(dlib);
+    b.installArtifact(pybind11);
 }
