@@ -211,7 +211,6 @@ pub fn build(b: *std.build.Builder) void {
     }, .flags = &cppflags });
     dlib.defineCMacro("DLIB_PNG_SUPPORT", "1");
     dlib.defineCMacro("DLIB_JPEG_SUPPORT", "1");
-    dlib.defineCMacro("DLIB_WEBP_SUPPORT", "1");
     dlib.defineCMacro("DLIB_ENABLE_ASSERTS", "1");
     dlib.defineCMacro("DLIB_ENABLE_STACK_TRACE", "1");
     dlib.defineCMacro("USE_AVX_INSTRUCTIONS", "1");
@@ -221,10 +220,13 @@ pub fn build(b: *std.build.Builder) void {
     dlib.linkLibrary(libpng);
     dlib.linkLibrary(libjpeg);
     dlib.installHeadersDirectory("dlib", "dlib");
-    dlib.linkSystemLibrary("libwebp");
-    dlib.linkSystemLibrary("pthread");
-    dlib.linkSystemLibrary("X11");
-    dlib.addSystemIncludePath(.{ .path = "/usr/include" });
+    if (dlib.target.os_tag != .windows) {
+        dlib.defineCMacro("DLIB_WEBP_SUPPORT", "1");
+        dlib.linkSystemLibrary("libwebp");
+        dlib.linkSystemLibrary("pthread");
+        dlib.linkSystemLibrary("X11");
+        dlib.addSystemIncludePath(.{ .path = "/usr/include" });
+    }
     b.installArtifact(dlib);
 
     const examples = [_][]const u8{
@@ -247,7 +249,9 @@ pub fn build(b: *std.build.Builder) void {
         exe.linkLibrary(dlib);
         exe.defineCMacro("DLIB_PNG_SUPPORT", "1");
         exe.defineCMacro("DLIB_JPEG_SUPPORT", "1");
-        exe.defineCMacro("DLIB_WEBP_SUPPORT", "1");
+        if (dlib.target.os_tag != .windows) {
+            exe.defineCMacro("DLIB_WEBP_SUPPORT", "1");
+        }
         exe.defineCMacro("DLIB_ENABLE_ASSERTS", "1");
         exe.defineCMacro("DLIB_ENABLE_STACK_TRACE", "1");
         exe.strip = true;
@@ -262,7 +266,9 @@ pub fn build(b: *std.build.Builder) void {
     if (pybind11.optimize != .Debug)
         pybind11.strip = true;
     pybind11.linkLibCpp();
-    pybind11.addIncludePath(.{ .path = "/usr/include/python3.11/" });
+    if (dlib.target.os_tag != .windows) {
+        pybind11.addIncludePath(.{ .path = "/usr/include/python3.11/" });
+    }
     pybind11.addIncludePath(.{ .path = "dlib/external/pybind11/include" });
     pybind11.addCSourceFiles(.{ .files = &.{
         "tools/python/src/dlib.cpp",
