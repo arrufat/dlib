@@ -1,8 +1,9 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const strip = optimize != .Debug;
     const cflags = [_][]const u8{
         "-std=c89",
         "-fno-sanitize=undefined",
@@ -18,8 +19,8 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    zlib.strip = true;
-    zlib.optimize = .ReleaseFast;
+    zlib.root_module.strip = strip;
+    zlib.root_module.optimize = .ReleaseFast;
     zlib.linkLibC();
     zlib.addCSourceFiles(.{ .files = &.{
         "dlib/external/zlib/adler32.c",
@@ -47,8 +48,8 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    libpng.strip = true;
-    libpng.optimize = .ReleaseFast;
+    libpng.root_module.optimize = .ReleaseFast;
+    libpng.root_module.strip = true;
     libpng.linkLibC();
     libpng.addCSourceFiles(.{ .files = &.{
         "dlib/external/libpng/arm/arm_init.c",
@@ -82,8 +83,8 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    libjpeg.strip = true;
-    libjpeg.optimize = .ReleaseFast;
+    libjpeg.root_module.optimize = .ReleaseFast;
+    libjpeg.root_module.strip = true;
     libjpeg.linkLibC();
     libjpeg.addCSourceFiles(.{ .files = &.{
         "dlib/external/libjpeg/jaricom.c",
@@ -141,8 +142,8 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    if (dlib.optimize != .Debug)
-        dlib.strip = true;
+    if (dlib.root_module.optimize != .Debug)
+        dlib.root_module.strip = strip;
     dlib.linkLibCpp();
     dlib.addCSourceFiles(.{ .files = &.{
         "dlib/base64/base64_kernel_1.cpp",
@@ -220,7 +221,7 @@ pub fn build(b: *std.build.Builder) void {
     dlib.linkLibrary(libpng);
     dlib.linkLibrary(libjpeg);
     dlib.installHeadersDirectory("dlib", "dlib");
-    if (dlib.target.os_tag != .windows) {
+    if (target.result.os.tag != .windows) {
         dlib.defineCMacro("DLIB_WEBP_SUPPORT", "1");
         dlib.linkSystemLibrary("libwebp");
         dlib.linkSystemLibrary("pthread");
@@ -249,12 +250,12 @@ pub fn build(b: *std.build.Builder) void {
         exe.linkLibrary(dlib);
         exe.defineCMacro("DLIB_PNG_SUPPORT", "1");
         exe.defineCMacro("DLIB_JPEG_SUPPORT", "1");
-        if (dlib.target.os_tag != .windows) {
+        if (target.result.os.tag != .windows) {
             exe.defineCMacro("DLIB_WEBP_SUPPORT", "1");
         }
         exe.defineCMacro("DLIB_ENABLE_ASSERTS", "1");
         exe.defineCMacro("DLIB_ENABLE_STACK_TRACE", "1");
-        exe.strip = true;
+        exe.root_module.strip = strip;
         b.installArtifact(exe);
     }
 
@@ -263,10 +264,9 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    if (pybind11.optimize != .Debug)
-        pybind11.strip = true;
+    pybind11.root_module.strip = strip;
     pybind11.linkLibCpp();
-    if (dlib.target.os_tag != .windows) {
+    if (target.result.os.tag != .windows) {
         pybind11.addIncludePath(.{ .path = "/usr/include/python3.11/" });
     }
     pybind11.addIncludePath(.{ .path = "dlib/external/pybind11/include" });
