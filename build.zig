@@ -39,8 +39,8 @@ pub fn build(b: *std.Build) void {
         "dlib/external/zlib/gzread.c",
         "dlib/external/zlib/gzwrite.c",
     }, .flags = &cflags });
-    zlib.installHeader("dlib/external/zlib/zconf.h", "zconf.h");
-    zlib.installHeader("dlib/external/zlib/zlib.h", "zlib.h");
+    zlib.installHeader(b.path("dlib/external/zlib/zconf.h"), "zconf.h");
+    zlib.installHeader(b.path("dlib/external/zlib/zlib.h"), "zlib.h");
     b.installArtifact(zlib);
 
     const libpng = b.addStaticLibrary(.{
@@ -72,10 +72,10 @@ pub fn build(b: *std.Build) void {
         "dlib/external/libpng/pngwutil.c",
     }, .flags = &cflags });
     libpng.linkLibrary(zlib);
-    libpng.installHeader("dlib/external/libpng/pnglibconf.h", "pnglibconf.h");
-    libpng.installHeader("dlib/external/libpng/pngconf.h", "pngconf.h");
-    libpng.installHeader("dlib/external/libpng/png.h", "png.h");
-    libpng.installHeader("dlib/external/libpng/png.h", "png.h");
+    libpng.installHeader(b.path("dlib/external/libpng/pnglibconf.h"), "pnglibconf.h");
+    libpng.installHeader(b.path("dlib/external/libpng/pngconf.h"), "pngconf.h");
+    libpng.installHeader(b.path("dlib/external/libpng/png.h"), "png.h");
+    libpng.installHeader(b.path("dlib/external/libpng/png.h"), "png.h");
     b.installArtifact(libpng);
 
     const libjpeg = b.addStaticLibrary(.{
@@ -132,9 +132,9 @@ pub fn build(b: *std.Build) void {
         "dlib/external/libjpeg/jquant2.c",
         "dlib/external/libjpeg/jutils.c",
     }, .flags = &cflags });
-    libjpeg.installHeader("dlib/external/libjpeg/jconfig.h", "jconfig.h");
-    libjpeg.installHeader("dlib/external/libjpeg/jmorecfg.h", "jmorecfg.h");
-    libjpeg.installHeader("dlib/external/libjpeg/jpeglib.h", "jpeglib.h");
+    libjpeg.installHeader(b.path("dlib/external/libjpeg/jconfig.h"), "jconfig.h");
+    libjpeg.installHeader(b.path("dlib/external/libjpeg/jmorecfg.h"), "jmorecfg.h");
+    libjpeg.installHeader(b.path("dlib/external/libjpeg/jpeglib.h"), "jpeglib.h");
     b.installArtifact(libjpeg);
 
     const dlib = b.addStaticLibrary(.{
@@ -220,13 +220,12 @@ pub fn build(b: *std.Build) void {
     dlib.defineCMacro("DLIB_JPEG_STATIC", "");
     dlib.linkLibrary(libpng);
     dlib.linkLibrary(libjpeg);
-    dlib.installHeadersDirectory("dlib", "dlib");
+    dlib.installHeadersDirectory(b.path("dlib"), "dlib", .{});
     if (target.result.os.tag != .windows) {
         dlib.defineCMacro("DLIB_WEBP_SUPPORT", "1");
         dlib.linkSystemLibrary("libwebp");
         dlib.linkSystemLibrary("pthread");
         dlib.linkSystemLibrary("X11");
-        dlib.addSystemIncludePath(.{ .path = "/usr/include" });
     }
     b.installArtifact(dlib);
 
@@ -243,7 +242,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         });
         exe.addCSourceFile(.{
-            .file = .{ .path = b.fmt("examples/{s}.cpp", .{example}) },
+            .file = b.path(b.fmt("examples/{s}.cpp", .{example})),
             .flags = &cppflags,
         });
         exe.linkLibCpp();
@@ -266,10 +265,8 @@ pub fn build(b: *std.Build) void {
     });
     pybind11.root_module.strip = strip;
     pybind11.linkLibCpp();
-    if (target.result.os.tag != .windows) {
-        pybind11.addIncludePath(.{ .path = "/usr/include/python3.11/" });
-    }
-    pybind11.addIncludePath(.{ .path = "dlib/external/pybind11/include" });
+    pybind11.linkSystemLibrary("python3");
+    pybind11.addIncludePath(b.path("dlib/external/pybind11/include"));
     pybind11.addCSourceFiles(.{ .files = &.{
         "tools/python/src/dlib.cpp",
         "tools/python/src/matrix.cpp",
