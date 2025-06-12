@@ -9,12 +9,15 @@ fn addOption(
     default_value: T,
 ) void {
     const opt = b.option(T, name, b.fmt("{s} (default: {})", .{ description, default_value })) orelse default_value;
-    module.defineCMacro(name, switch (T) {
+    const macro_value = switch (T) {
         bool => if (opt) "1" else "0",
-        void => null,
+        void => "",
         []const u8 => default_value,
         else => @compileError("option of type " ++ @typeName(@TypeOf(T)) ++ " not supported"),
-    });
+    };
+    if (T != void or macro_value.len > 0) {
+        module.root_module.addCMacro(name, macro_value);
+    }
 }
 
 pub fn build(b: *std.Build) void {
@@ -123,19 +126,19 @@ pub fn build(b: *std.Build) void {
 
     // System integrations
     if (b.systemIntegrationOption("webp", .{})) {
-        dlib.defineCMacro("DLIB_WEBP_SUPPORT", "1");
+        dlib.root_module.addCMacro("DLIB_WEBP_SUPPORT", "1");
         dlib.linkSystemLibrary("libwebp");
     }
 
     if (b.systemIntegrationOption("jxl", .{})) {
-        dlib.defineCMacro("DLIB_JXL_SUPPORT", "1");
+        dlib.root_module.addCMacro("DLIB_JXL_SUPPORT", "1");
         dlib.linkSystemLibrary("jxl");
         dlib.linkSystemLibrary("jxl_cms");
         dlib.linkSystemLibrary("jxl_threads");
     }
 
     if (b.systemIntegrationOption("ffmpeg", .{})) {
-        dlib.defineCMacro("DLIB_USE_FFMPEG", null);
+        dlib.root_module.addCMacro("DLIB_USE_FFMPEG", "");
         dlib.linkSystemLibrary("avdevice");
         dlib.linkSystemLibrary("avfilter");
         dlib.linkSystemLibrary("avformat");
@@ -216,7 +219,7 @@ pub fn build(b: *std.Build) void {
     if (b.systemIntegrationOption("jpeg", .{ .default = true })) {
         dlib.linkSystemLibrary("jpeg");
     } else {
-        dlib.defineCMacro("DLIB_JPEG_STATIC", "");
+        dlib.root_module.addCMacro("DLIB_JPEG_STATIC", "");
         const libjpeg = b.addStaticLibrary(.{
             .name = "jpeg",
             .target = target,
@@ -355,14 +358,14 @@ pub fn build(b: *std.Build) void {
         pybind11.linkLibCpp();
         pybind11.linkLibrary(dlib);
         pybind11.linkSystemLibrary("python3");
-        pybind11.defineCMacro("PYBIND11_PYTHON_VERSION", "3.10");
-        pybind11.defineCMacro("_dlib_pybind11_EXPORTS", "1");
-        pybind11.defineCMacro("PYBIND11_PYTHONLIBS_OVERWRITE", null);
-        pybind11.defineCMacro("DLIB_VERSION", "19.24.99");
-        pybind11.defineCMacro("DLIB_PNG_SUPPORT", "1");
-        pybind11.defineCMacro("DLIB_JPEG_SUPPORT", "1");
-        pybind11.defineCMacro("DLIB_NO_GUI_SUPPORT", "1");
-        pybind11.defineCMacro("DLIB_NO_ABORT_ON_2ND_FATAL_ERROR", null);
+        pybind11.root_module.addCMacro("PYBIND11_PYTHON_VERSION", "3.10");
+        pybind11.root_module.addCMacro("_dlib_pybind11_EXPORTS", "1");
+        pybind11.root_module.addCMacro("PYBIND11_PYTHONLIBS_OVERWRITE", "");
+        pybind11.root_module.addCMacro("DLIB_VERSION", "19.24.99");
+        pybind11.root_module.addCMacro("DLIB_PNG_SUPPORT", "1");
+        pybind11.root_module.addCMacro("DLIB_JPEG_SUPPORT", "1");
+        pybind11.root_module.addCMacro("DLIB_NO_GUI_SUPPORT", "1");
+        pybind11.root_module.addCMacro("DLIB_NO_ABORT_ON_2ND_FATAL_ERROR", "");
         b.installArtifact(pybind11);
     }
 }
