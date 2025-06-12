@@ -1,5 +1,44 @@
 const std = @import("std");
 
+fn linkSystemLibraries(
+    exe: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    use_webp: bool,
+    use_jxl: bool,
+    use_ffmpeg: bool,
+) void {
+    // Link standard system libraries (not Windows)
+    if (target.result.os.tag != .windows) {
+        exe.linkSystemLibrary("pthread");
+        exe.linkSystemLibrary("X11");
+    }
+
+    // Link optional system libraries based on integration flags
+    if (use_webp) {
+        exe.linkSystemLibrary("libwebp");
+    }
+
+    if (use_jxl) {
+        exe.linkSystemLibrary("jxl");
+        exe.linkSystemLibrary("jxl_cms");
+        exe.linkSystemLibrary("jxl_threads");
+    }
+
+    if (use_ffmpeg) {
+        exe.linkSystemLibrary("avdevice");
+        exe.linkSystemLibrary("avfilter");
+        exe.linkSystemLibrary("avformat");
+        exe.linkSystemLibrary("avcodec");
+        exe.linkSystemLibrary("swresample");
+        exe.linkSystemLibrary("swscale");
+        exe.linkSystemLibrary("avutil");
+    }
+
+    // Link default image libraries
+    exe.linkSystemLibrary("png");
+    exe.linkSystemLibrary("jpeg");
+}
+
 fn addOption(
     b: *std.Build,
     module: *std.Build.Step.Compile,
@@ -34,13 +73,15 @@ pub fn build(b: *std.Build) void {
         "-fno-sanitize=undefined",
     };
 
-    const dlib = b.addStaticLibrary(.{
+    const dlib = b.addLibrary(.{
         .name = "dlib",
-        .target = target,
-        .optimize = optimize,
+        .linkage = .static,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .strip = strip,
+        }),
     });
-    if (dlib.root_module.optimize != .Debug)
-        dlib.root_module.strip = strip;
     dlib.linkLibCpp();
     dlib.addCSourceFiles(.{ .files = &.{
         "dlib/base64/base64_kernel_1.cpp",
@@ -88,8 +129,6 @@ pub fn build(b: *std.Build) void {
         "dlib/image_saver/save_jpeg.cpp",
         "dlib/image_loader/jpeg_loader.cpp",
         "dlib/image_saver/save_jpeg.cpp",
-        "dlib/image_loader/webp_loader.cpp",
-        "dlib/image_saver/save_webp.cpp",
         "dlib/gui_widgets/fonts.cpp",
         "dlib/gui_widgets/widgets.cpp",
         "dlib/gui_widgets/drawable.cpp",
@@ -118,46 +157,42 @@ pub fn build(b: *std.Build) void {
     addOption(b, dlib, "USE_SS4_INSTRUCTIONS", "Turn on SS4 instructions", bool, true);
 
     dlib.installHeadersDirectory(b.path("dlib"), "dlib", .{});
-    if (target.result.os.tag != .windows) {
-        dlib.linkSystemLibrary("pthread");
-        dlib.linkSystemLibrary("X11");
-    }
     b.installArtifact(dlib);
 
-    // System integrations
-    if (b.systemIntegrationOption("webp", .{})) {
+    // System integrations (conditional compilation only)
+    const use_webp = b.systemIntegrationOption("webp", .{});
+    if (use_webp) {
         dlib.root_module.addCMacro("DLIB_WEBP_SUPPORT", "1");
-        dlib.linkSystemLibrary("libwebp");
+        dlib.addCSourceFiles(.{ .files = &.{
+            "dlib/image_loader/webp_loader.cpp",
+            "dlib/image_saver/save_webp.cpp",
+        }, .flags = &cppflags });
     }
 
-    if (b.systemIntegrationOption("jxl", .{})) {
+    const use_jxl = b.systemIntegrationOption("jxl", .{});
+    if (use_jxl) {
         dlib.root_module.addCMacro("DLIB_JXL_SUPPORT", "1");
-        dlib.linkSystemLibrary("jxl");
-        dlib.linkSystemLibrary("jxl_cms");
-        dlib.linkSystemLibrary("jxl_threads");
+        dlib.addCSourceFiles(.{ .files = &.{
+            "dlib/image_loader/jxl_loader.cpp",
+            "dlib/image_saver/save_jxl.cpp",
+        }, .flags = &cppflags });
     }
 
-    if (b.systemIntegrationOption("ffmpeg", .{})) {
+    const use_ffmpeg = b.systemIntegrationOption("ffmpeg", .{});
+    if (use_ffmpeg) {
         dlib.root_module.addCMacro("DLIB_USE_FFMPEG", "");
-        dlib.linkSystemLibrary("avdevice");
-        dlib.linkSystemLibrary("avfilter");
-        dlib.linkSystemLibrary("avformat");
-        dlib.linkSystemLibrary("avcodec");
-        dlib.linkSystemLibrary("swresample");
-        dlib.linkSystemLibrary("swscale");
-        dlib.linkSystemLibrary("avutil");
     }
 
-    if (b.systemIntegrationOption("png", .{ .default = true })) {
-        dlib.linkSystemLibrary("png");
-    } else {
-        const zlib = b.addStaticLibrary(.{
+    if (!b.systemIntegrationOption("png", .{ .default = true })) {
+        const zlib = b.addLibrary(.{
             .name = "z",
-            .target = target,
-            .optimize = optimize,
+            .linkage = .static,
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+                .strip = strip,
+            }),
         });
-        zlib.root_module.strip = strip;
-        zlib.root_module.optimize = .ReleaseFast;
         zlib.linkLibC();
         zlib.addCSourceFiles(.{ .files = &.{
             "dlib/external/zlib/adler32.c",
@@ -180,13 +215,15 @@ pub fn build(b: *std.Build) void {
         zlib.installHeader(b.path("dlib/external/zlib/zlib.h"), "zlib.h");
         b.installArtifact(zlib);
 
-        const libpng = b.addStaticLibrary(.{
+        const libpng = b.addLibrary(.{
             .name = "png",
-            .target = target,
-            .optimize = optimize,
+            .linkage = .static,
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+                .strip = strip,
+            }),
         });
-        libpng.root_module.optimize = .ReleaseFast;
-        libpng.root_module.strip = true;
         libpng.linkLibC();
         libpng.addCSourceFiles(.{ .files = &.{
             "dlib/external/libpng/arm/arm_init.c",
@@ -216,17 +253,18 @@ pub fn build(b: *std.Build) void {
         b.installArtifact(libpng);
         dlib.linkLibrary(libpng);
     }
-    if (b.systemIntegrationOption("jpeg", .{ .default = true })) {
-        dlib.linkSystemLibrary("jpeg");
-    } else {
+
+    if (!b.systemIntegrationOption("jpeg", .{ .default = true })) {
         dlib.root_module.addCMacro("DLIB_JPEG_STATIC", "");
-        const libjpeg = b.addStaticLibrary(.{
+        const libjpeg = b.addLibrary(.{
             .name = "jpeg",
-            .target = target,
-            .optimize = optimize,
+            .linkage = .static,
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+                .strip = strip,
+            }),
         });
-        libjpeg.root_module.optimize = .ReleaseFast;
-        libjpeg.root_module.strip = true;
         libjpeg.linkLibC();
         libjpeg.addCSourceFiles(.{ .files = &.{
             "dlib/external/libjpeg/jaricom.c",
@@ -281,40 +319,47 @@ pub fn build(b: *std.Build) void {
         dlib.linkLibrary(libjpeg);
     }
 
-    // const examples = [_][]const u8{
-    //     "assignment_learning_ex",
-    //     "max_cost_assignment_ex",
-    //     "image_ex",
-    // };
+    const examples = [_][]const u8{
+        "assignment_learning_ex",
+        "max_cost_assignment_ex",
+        "image_ex",
+    };
 
-    // for (examples) |example| {
-    //     const exe = b.addExecutable(.{
-    //         .name = example,
-    //         .target = target,
-    //         .optimize = optimize,
-    //     });
-    //     exe.addCSourceFile(.{
-    //         .file = b.path(b.fmt("examples/{s}.cpp", .{example})),
-    //         .flags = &cppflags,
-    //     });
-    //     exe.linkLibCpp();
-    //     exe.linkLibrary(dlib);
-    //     exe.defineCMacro("DLIB_PNG_SUPPORT", "1");
-    //     exe.defineCMacro("DLIB_JPEG_SUPPORT", "1");
-    //     if (target.result.os.tag != .windows) {
-    //         exe.defineCMacro("DLIB_WEBP_SUPPORT", "1");
-    //     }
-    //     exe.defineCMacro("DLIB_ENABLE_ASSERTS", "1");
-    //     exe.defineCMacro("DLIB_ENABLE_STACK_TRACE", "1");
-    //     exe.root_module.strip = strip;
-    //     b.installArtifact(exe);
-    // }
-
-    if (b.systemIntegrationOption("python", .{ .default = false })) {
-        const pybind11 = b.addSharedLibrary(.{
-            .name = "pybind11",
+    for (examples) |example| {
+        const exe = b.addExecutable(.{
+            .name = example,
             .target = target,
             .optimize = optimize,
+            .strip = strip,
+        });
+        exe.addCSourceFile(.{
+            .file = b.path(b.fmt("examples/{s}.cpp", .{example})),
+            .flags = &cppflags,
+        });
+        exe.linkLibCpp();
+        exe.linkLibrary(dlib);
+
+        // Link system libraries required by dlib
+        linkSystemLibraries(exe, target, use_webp, use_jxl, use_ffmpeg);
+
+        exe.root_module.addCMacro("DLIB_PNG_SUPPORT", "1");
+        exe.root_module.addCMacro("DLIB_JPEG_SUPPORT", "1");
+        if (use_webp) exe.root_module.addCMacro("DLIB_WEBP_SUPPORT", "1");
+        if (use_jxl) exe.root_module.addCMacro("DLIB_JXL_SUPPORT", "1");
+        exe.root_module.addCMacro("DLIB_ENABLE_ASSERTS", "1");
+        exe.root_module.addCMacro("DLIB_ENABLE_STACK_TRACE", "1");
+        exe.root_module.strip = strip;
+        b.installArtifact(exe);
+    }
+
+    if (b.systemIntegrationOption("python", .{ .default = false })) {
+        const pybind11 = b.addLibrary(.{
+            .name = "pybind11",
+            .linkage = .static,
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+            }),
         });
         const pybind11flags = [_][]const u8{
             "-std=c++14",
@@ -357,7 +402,11 @@ pub fn build(b: *std.Build) void {
         pybind11.addIncludePath(b.path("dlib/external/pybind11/include"));
         pybind11.linkLibCpp();
         pybind11.linkLibrary(dlib);
+
+        // Link system libraries required by dlib and Python
+        linkSystemLibraries(pybind11, target, use_webp, use_jxl, use_ffmpeg);
         pybind11.linkSystemLibrary("python3");
+
         pybind11.root_module.addCMacro("PYBIND11_PYTHON_VERSION", "3.10");
         pybind11.root_module.addCMacro("_dlib_pybind11_EXPORTS", "1");
         pybind11.root_module.addCMacro("PYBIND11_PYTHONLIBS_OVERWRITE", "");
