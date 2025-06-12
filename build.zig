@@ -355,7 +355,7 @@ pub fn build(b: *std.Build) void {
     if (b.systemIntegrationOption("python", .{ .default = false })) {
         const pybind11 = b.addLibrary(.{
             .name = "pybind11",
-            .linkage = .static,
+            .linkage = .dynamic,
             .root_module = b.createModule(.{
                 .target = target,
                 .optimize = optimize,
