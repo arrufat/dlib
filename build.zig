@@ -3,6 +3,8 @@ const std = @import("std");
 fn linkSystemLibraries(
     exe: *std.Build.Step.Compile,
     target: std.Build.ResolvedTarget,
+    use_png: bool,
+    use_jpeg: bool,
     use_webp: bool,
     use_jxl: bool,
     use_ffmpeg: bool,
@@ -13,18 +15,26 @@ fn linkSystemLibraries(
         exe.linkSystemLibrary("X11");
     }
 
-    // Link optional system libraries based on integration flags
+    exe.root_module.addCMacro("DLIB_PNG_SUPPORT", "1");
+    if (use_png) exe.linkSystemLibrary("png");
+
+    exe.root_module.addCMacro("DLIB_JPEG_SUPPORT", "1");
+    if (use_jpeg) exe.linkSystemLibrary("jpeg");
+
     if (use_webp) {
+        exe.root_module.addCMacro("DLIB_WEBP_SUPPORT", "1");
         exe.linkSystemLibrary("libwebp");
     }
 
     if (use_jxl) {
+        exe.root_module.addCMacro("DLIB_JXL_SUPPORT", "1");
         exe.linkSystemLibrary("jxl");
         exe.linkSystemLibrary("jxl_cms");
         exe.linkSystemLibrary("jxl_threads");
     }
 
     if (use_ffmpeg) {
+        exe.root_module.addCMacro("DLIB_USE_FFMPEG", "");
         exe.linkSystemLibrary("avdevice");
         exe.linkSystemLibrary("avfilter");
         exe.linkSystemLibrary("avformat");
@@ -33,10 +43,6 @@ fn linkSystemLibraries(
         exe.linkSystemLibrary("swscale");
         exe.linkSystemLibrary("avutil");
     }
-
-    // Link default image libraries
-    exe.linkSystemLibrary("png");
-    exe.linkSystemLibrary("jpeg");
 }
 
 fn addOption(
@@ -183,7 +189,8 @@ pub fn build(b: *std.Build) void {
         dlib.root_module.addCMacro("DLIB_USE_FFMPEG", "");
     }
 
-    if (!b.systemIntegrationOption("png", .{ .default = true })) {
+    const use_png = b.systemIntegrationOption("png", .{ .default = true });
+    if (!use_png) {
         const zlib = b.addLibrary(.{
             .name = "z",
             .linkage = .static,
@@ -254,7 +261,8 @@ pub fn build(b: *std.Build) void {
         dlib.linkLibrary(libpng);
     }
 
-    if (!b.systemIntegrationOption("jpeg", .{ .default = true })) {
+    const use_jpeg = b.systemIntegrationOption("jpeg", .{ .default = true });
+    if (!use_jpeg) {
         dlib.root_module.addCMacro("DLIB_JPEG_STATIC", "");
         const libjpeg = b.addLibrary(.{
             .name = "jpeg",
@@ -340,12 +348,8 @@ pub fn build(b: *std.Build) void {
         exe.linkLibrary(dlib);
 
         // Link system libraries required by dlib
-        linkSystemLibraries(exe, target, use_webp, use_jxl, use_ffmpeg);
+        linkSystemLibraries(exe, target, use_png, use_jpeg, use_webp, use_jxl, use_ffmpeg);
 
-        exe.root_module.addCMacro("DLIB_PNG_SUPPORT", "1");
-        exe.root_module.addCMacro("DLIB_JPEG_SUPPORT", "1");
-        if (use_webp) exe.root_module.addCMacro("DLIB_WEBP_SUPPORT", "1");
-        if (use_jxl) exe.root_module.addCMacro("DLIB_JXL_SUPPORT", "1");
         exe.root_module.addCMacro("DLIB_ENABLE_ASSERTS", "1");
         exe.root_module.addCMacro("DLIB_ENABLE_STACK_TRACE", "1");
         exe.root_module.strip = strip;
@@ -404,17 +408,14 @@ pub fn build(b: *std.Build) void {
         pybind11.linkLibrary(dlib);
 
         // Link system libraries required by dlib and Python
-        linkSystemLibraries(pybind11, target, use_webp, use_jxl, use_ffmpeg);
+        linkSystemLibraries(pybind11, target, use_png, use_jpeg, use_webp, use_jxl, use_ffmpeg);
         pybind11.linkSystemLibrary("python3");
 
-        pybind11.root_module.addCMacro("PYBIND11_PYTHON_VERSION", "3.10");
+        pybind11.root_module.addCMacro("PYBIND11_PYTHON_VERSION", "3.13");
         pybind11.root_module.addCMacro("_dlib_pybind11_EXPORTS", "1");
         pybind11.root_module.addCMacro("PYBIND11_PYTHONLIBS_OVERWRITE", "");
-        pybind11.root_module.addCMacro("DLIB_VERSION", "19.24.99");
-        pybind11.root_module.addCMacro("DLIB_PNG_SUPPORT", "1");
-        pybind11.root_module.addCMacro("DLIB_JPEG_SUPPORT", "1");
-        pybind11.root_module.addCMacro("DLIB_NO_GUI_SUPPORT", "1");
-        pybind11.root_module.addCMacro("DLIB_NO_ABORT_ON_2ND_FATAL_ERROR", "");
+        pybind11.root_module.addCMacro("DLIB_VERSION", "20.0.99");
+        linkSystemLibraries(pybind11, target, use_png, use_jpeg, use_webp, use_jxl, use_ffmpeg);
         b.installArtifact(pybind11);
     }
 }
