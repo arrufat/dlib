@@ -5218,6 +5218,36 @@ void test_multm_prev()
         DLIB_TEST(max(abs(mat(net_output) - mat(expected_output))) < 1e-5);
     }
 
+    void test_box_ciou()
+    {
+        print_spinner();
+
+        // Exact match
+        drectangle a = drectangle(10, 10, 20, 20);
+        double iou = box_ciou(a, a);
+        DLIB_TEST_MSG(std::abs(iou - 1.0) < 1e-6, "IoU was " << iou);
+
+        // Disjoint boxes
+        drectangle b = drectangle(100, 100, 110, 110);
+        iou = box_ciou(a, b);
+        // They are disjoint, so IoU = 0, but CIoU penalty will make it negative.
+        // Penalty is d_sq / c_diag_sq + alpha * v.
+        // The distance is big. Let's just check it is <= 0.
+        DLIB_TEST_MSG(iou <= 0.0, "CIoU for disjoint boxes should be <= 0. Got " << iou);
+
+        // Nested boxes (same center)
+        drectangle c = drectangle(12, 12, 18, 18);
+        iou = box_ciou(a, c);
+        // CIoU should be equal to the regular IoU if the centers are the same and aspect ratios match.
+        // a area = 121, c area = 49 (w=7, h=7; wait 20-10=10, width=10+1=11? No drectangle area doesn't add 1).
+        // Let's just use centered_drect to be precise.
+        drectangle d1 = centered_drect(dpoint(50, 50), 20, 20);
+        drectangle d2 = centered_drect(dpoint(50, 50), 10, 10);
+        iou = box_ciou(d1, d2);
+        double iou_true = 100.0 / 400.0;
+        DLIB_TEST_MSG(std::abs(iou - iou_true) < 1e-6, "IoU was " << iou << ", expected " << iou_true);
+    }
+
 // ----------------------------------------------------------------------------------------
 
     class dnn_tester : public tester
@@ -5235,6 +5265,7 @@ void test_multm_prev()
             // make the tests repeatable
             srand(1234);
 
+            test_box_ciou();
             test_tagging();
 #ifdef DLIB_USE_CUDA
             test_affine_rect();

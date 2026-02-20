@@ -3582,6 +3582,29 @@ namespace dlib
         return out;
     }
 
+    inline double box_ciou (
+        const drectangle& p,
+        const drectangle& t
+    )
+    {
+        const double eps = std::numeric_limits<double>::epsilon();
+        double inner = p.intersect(t).area();
+        double union_area = p.area() + t.area() - inner;
+        double iou = inner / (union_area + eps);
+
+        drectangle c = p + t;
+        double c_diag_sq = c.width() * c.width() + c.height() * c.height() + eps;
+
+        dpoint p_center = dcenter(p);
+        dpoint t_center = dcenter(t);
+        double d_sq = (p_center.x() - t_center.x()) * (p_center.x() - t_center.x()) + (p_center.y() - t_center.y()) * (p_center.y() - t_center.y());
+
+        double v = (t.height() > 0 && p.height() > 0) ? 4.0 / (pi * pi) * std::pow(std::atan(t.width() / t.height()) - std::atan(p.width() / p.height()), 2) : 0;
+        double alpha = (iou > 0.5) ? v / (1.0 - iou + v + eps) : 0;
+
+        return iou - d_sq / c_diag_sq - alpha * v;
+    }
+
     namespace impl
     {
         template <template <typename> class TAG_TYPE, template <typename> class... TAG_TYPES>
@@ -3655,6 +3678,7 @@ namespace dlib
                 const long num_feats = output_tensor.k() / anchors.size();
                 const long num_classes = num_feats - 5;
                 const float* const out_data = output_tensor.host();
+                const double eps = 1e-7;
 
                 for (size_t a = 0; a < anchors.size(); ++a)
                 {
@@ -3673,8 +3697,8 @@ namespace dlib
                                 const double w = out_data[tensor_index(output_tensor, n, k + 2, r, c)];
                                 const double h = out_data[tensor_index(output_tensor, n, k + 3, r, c)];
                                 yolo_rect det(centered_drect(dpoint((x + c) * stride_x, (y + r) * stride_y),
-                                                             w / (1 - w) * anchors[a].width,
-                                                             h / (1 - h) * anchors[a].height));
+                                                             w / (1.0 - w + eps) * anchors[a].width,
+                                                             h / (1.0 - h + eps) * anchors[a].height));
                                 for (long i = 0; i < num_classes; ++i)
                                 {
                                     const double conf = obj * out_data[tensor_index(output_tensor, n, k + 5 + i, r, c)];
@@ -3707,6 +3731,7 @@ namespace dlib
                 double& loss
             )
             {
+                const double eps = 1e-7;
                 const tensor& output_tensor = layer<TAG_TYPE>(sub).get_output();
                 const auto& anchors = options.anchors.at(tag_id<TAG_TYPE>::id);
                 DLIB_CASSERT(static_cast<size_t>(output_tensor.k()) == anchors.size() * (options.labels.size() + 5));
@@ -3737,8 +3762,8 @@ namespace dlib
 
                             // The prediction at r, c for anchor a
                             const yolo_rect pred(centered_drect(dpoint((x + c) * stride_x, (y + r) * stride_y),
-                                                                w / (1 - w) * anchors[a].width,
-                                                                h / (1 - h) * anchors[a].height));
+                                                                w / (1.0 - w + eps) * anchors[a].width,
+                                                                h / (1.0 - h + eps) * anchors[a].height));
 
                             // Find the best IoU for all ground truth boxes
                             double best_iou = 0;
@@ -3781,12 +3806,12 @@ namespace dlib
                         {
                             const auto anchor(centered_drect(t_center, details[a].width, details[a].height));
                             const double iou = box_intersection_over_union(truth_box.rect, anchor);
+                            ious.add(iou);
                             if (iou > best_iou)
                             {
                                 best_iou = iou;
                                 best_a = a;
                                 best_tag_id = tag_id;
-                                ious.add(iou);
                             }
                         }
                     }
@@ -3809,54 +3834,105 @@ namespace dlib
                                 continue;
                         }
 
-                        const long c = t_center.x() / stride_x;
-                        const long r = t_center.y() / stride_y;
+                        const double cx = t_center.x() / stride_x;
+                        const double cy = t_center.y() / stride_y;
+                        const long c_center = cx;
+                        const long r_center = cy;
                         const long k = a * num_feats;
 
-                        // Get the truth box target values
-                        const double tx = t_center.x() / stride_x - c;
-                        const double ty = t_center.y() / stride_y - r;
-                        const double tw = truth_box.rect.width() / (anchors[a].width + truth_box.rect.width());
-                        const double th = truth_box.rect.height() / (anchors[a].height + truth_box.rect.height());
+                        // ATSS / Cross-grid matching: find up to 3 positive grid cells
+                        std::vector<std::pair<long, long>> target_cells;
+                        target_cells.emplace_back(c_center, r_center);
+                        const double offset_x = cx - c_center;
+                        const double offset_y = cy - r_center;
+                        if (offset_x < 0.5 && c_center > 0)
+                            target_cells.emplace_back(c_center - 1, r_center);
+                        else if (offset_x > 0.5 && c_center + 1 < output_tensor.nc())
+                            target_cells.emplace_back(c_center + 1, r_center);
 
-                        // Scale regression error according to the truth size
-                        const double scale_box = options.lambda_box * (2.0 - truth_box_area / input_area);
+                        if (offset_y < 0.5 && r_center > 0)
+                            target_cells.emplace_back(c_center, r_center - 1);
+                        else if (offset_y > 0.5 && r_center + 1 < output_tensor.nr())
+                            target_cells.emplace_back(c_center, r_center + 1);
 
-                        // Compute the smoothed L1 gradient for the box coordinates
-                        const auto x_idx = tensor_index(output_tensor, n, k + 0, r, c);
-                        const auto y_idx = tensor_index(output_tensor, n, k + 1, r, c);
-                        const auto w_idx = tensor_index(output_tensor, n, k + 2, r, c);
-                        const auto h_idx = tensor_index(output_tensor, n, k + 3, r, c);
-                        g[x_idx] = scale_box * put_in_range(-1, 1, (out_data[x_idx] * 2.0 - 0.5 - tx)) * 2.0f;
-                        g[y_idx] = scale_box * put_in_range(-1, 1, (out_data[y_idx] * 2.0 - 0.5 - ty)) * 2.0f;
-                        g[w_idx] = scale_box * put_in_range(-1, 1, (out_data[w_idx] - tw));
-                        g[h_idx] = scale_box * put_in_range(-1, 1, (out_data[h_idx] - th));
-
-                        // This grid cell should detect an object
-                        const auto o_idx = tensor_index(output_tensor, n, k + 4, r, c);
+                        for (const auto& cell : target_cells)
                         {
-                            const auto p = out_data[o_idx];
-                            const double focus = std::pow(1 - p, options.gamma_obj);
-                            const double g_obj = focus * (options.gamma_obj * p * safe_log(p) + p - 1);
-                            g[o_idx] = options.lambda_obj * g_obj;
-                        }
+                            const long c = cell.first;
+                            const long r = cell.second;
 
-                        // Compute the classification error using the truth weights and the focal loss
-                        for (long i = 0; i < num_classes; ++i)
-                        {
-                            const auto c_idx = tensor_index(output_tensor, n, k + 5 + i, r, c);
-                            const auto p = out_data[c_idx];
-                            if (truth_box.label == options.labels[i])
+                            const auto x_idx = tensor_index(output_tensor, n, k + 0, r, c);
+                            const auto y_idx = tensor_index(output_tensor, n, k + 1, r, c);
+                            const auto w_idx = tensor_index(output_tensor, n, k + 2, r, c);
+                            const auto h_idx = tensor_index(output_tensor, n, k + 3, r, c);
+
+                            // Bounding box outputs
+                            const double pred_x = out_data[x_idx] * 2.0 - 0.5;
+                            const double pred_y = out_data[y_idx] * 2.0 - 0.5;
+                            const double pred_w_sig = out_data[w_idx];
+                            const double pred_h_sig = out_data[h_idx];
+                            const double pred_w = pred_w_sig / (1.0 - pred_w_sig + eps) * anchors[a].width;
+                            const double pred_h = pred_h_sig / (1.0 - pred_h_sig + eps) * anchors[a].height;
+
+                            // Absolute predicted box centers relative to the target grid cell in input image space
+                            const double abs_pred_cx = (pred_x + c) * stride_x;
+                            const double abs_pred_cy = (pred_y + r) * stride_y;
+                            const double abs_tw = truth_box.rect.width();
+                            const double abs_th = truth_box.rect.height();
+                            const double abs_tcx = t_center.x();
+                            const double abs_tcy = t_center.y();
+
+                            // Use finite differences for CIoU gradients
+                            auto eval_ciou = [](double abs_pred_cx, double abs_pred_cy, double pred_w, double pred_h, double cx, double cy, double tw, double th) {
+                                return box_ciou(
+                                    centered_drect(dpoint(abs_pred_cx, abs_pred_cy), pred_w, pred_h),
+                                    centered_drect(dpoint(cx, cy), tw, th)
+                                );
+                            };
+
+                            const double grad_cx = -(eval_ciou(abs_pred_cx + eps, abs_pred_cy, pred_w, pred_h, abs_tcx, abs_tcy, abs_tw, abs_th) - eval_ciou(abs_pred_cx - eps, abs_pred_cy, pred_w, pred_h, abs_tcx, abs_tcy, abs_tw, abs_th)) / (2 * eps);
+                            const double grad_cy = -(eval_ciou(abs_pred_cx, abs_pred_cy + eps, pred_w, pred_h, abs_tcx, abs_tcy, abs_tw, abs_th) - eval_ciou(abs_pred_cx, abs_pred_cy - eps, pred_w, pred_h, abs_tcx, abs_tcy, abs_tw, abs_th)) / (2 * eps);
+                            const double grad_w  = -(eval_ciou(abs_pred_cx, abs_pred_cy, pred_w + eps, pred_h, abs_tcx, abs_tcy, abs_tw, abs_th) - eval_ciou(abs_pred_cx, abs_pred_cy, pred_w - eps, pred_h, abs_tcx, abs_tcy, abs_tw, abs_th)) / (2 * eps);
+                            const double grad_h  = -(eval_ciou(abs_pred_cx, abs_pred_cy, pred_w, pred_h + eps, abs_tcx, abs_tcy, abs_tw, abs_th) - eval_ciou(abs_pred_cx, abs_pred_cy, pred_w, pred_h - eps, abs_tcx, abs_tcy, abs_tw, abs_th)) / (2 * eps);
+
+                            const double grad_out_x = grad_cx * 2.0 * stride_x;
+                            const double grad_out_y = grad_cy * 2.0 * stride_y;
+                            const double grad_out_w = grad_w * anchors[a].width / std::pow(1.0 - pred_w_sig + eps, 2);
+                            const double grad_out_h = grad_h * anchors[a].height / std::pow(1.0 - pred_h_sig + eps, 2);
+
+                            // Scale regression error according to the truth size
+                            const double scale_box = options.lambda_box * (2.0 - truth_box_area / input_area);
+
+                            g[x_idx] = scale_box * put_in_range(-1, 1, grad_out_x);
+                            g[y_idx] = scale_box * put_in_range(-1, 1, grad_out_y);
+                            g[w_idx] = scale_box * put_in_range(-1, 1, grad_out_w);
+                            g[h_idx] = scale_box * put_in_range(-1, 1, grad_out_h);
+
+                            // This grid cell should detect an object
+                            const auto o_idx = tensor_index(output_tensor, n, k + 4, r, c);
                             {
-                                const double focus = std::pow(1 - p, options.gamma_cls);
-                                const double g_cls = focus * (options.gamma_cls * p * safe_log(p) + p - 1);
-                                g[c_idx] = truth_box.detection_confidence * options.lambda_cls * g_cls;
+                                const auto p = out_data[o_idx];
+                                const double focus = std::pow(1 - p, options.gamma_obj);
+                                const double g_obj = focus * (options.gamma_obj * p * safe_log(p) + p - 1);
+                                g[o_idx] = options.lambda_obj * g_obj;
                             }
-                            else
+
+                            // Compute the classification error using the truth weights and the focal loss
+                            for (long i = 0; i < num_classes; ++i)
                             {
-                                const double focus = std::pow(p, options.gamma_cls);
-                                const double g_cls = focus * (options.gamma_cls * (1 - p) * safe_log(1 - p) + p);
-                                g[c_idx] = options.lambda_cls * g_cls;
+                                const auto c_idx = tensor_index(output_tensor, n, k + 5 + i, r, c);
+                                const auto p = out_data[c_idx];
+                                if (truth_box.label == options.labels[i])
+                                {
+                                    const double focus = std::pow(1 - p, options.gamma_cls);
+                                    const double g_cls = focus * (options.gamma_cls * p * safe_log(p) + p - 1);
+                                    g[c_idx] = truth_box.detection_confidence * options.lambda_cls * g_cls;
+                                }
+                                else
+                                {
+                                    const double focus = std::pow(p, options.gamma_cls);
+                                    const double g_cls = focus * (options.gamma_cls * (1 - p) * safe_log(1 - p) + p);
+                                    g[c_idx] = options.lambda_cls * g_cls;
+                                }
                             }
                         }
                     }
