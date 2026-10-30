@@ -22,11 +22,13 @@ pub fn build(b: *std.Build) void {
     const os_tag = target.result.os.tag;
     const is_native = target.query.isNative();
 
-    // X11 and libwebp come from the host system, so they are off by default when cross-compiling.
+    // X11, libwebp and libjxl come from the host system, so they are off by default when cross-compiling.
     const features: Features = .{
         .gui = b.option(bool, "gui", "Build the GUI (X11 on Unix, win32 on Windows)") orelse
             (is_native or os_tag == .windows),
         .webp = b.option(bool, "webp", "Build WebP support against the system libwebp") orelse
+            (is_native and os_tag != .windows),
+        .jxl = b.option(bool, "jxl", "Build JPEG XL support against the system libjxl") orelse
             (is_native and os_tag != .windows),
         .cuda = b.option(bool, "cuda", "Build the CUDA/cuDNN backend (needs nvcc and cuDNN)") orelse false,
     };
@@ -270,6 +272,19 @@ pub fn build(b: *std.Build) void {
             .flags = &cppflags,
         });
         dlib.root_module.linkSystemLibrary("libwebp", .{});
+    }
+    if (features.jxl) {
+        dlib.root_module.addCSourceFiles(.{
+            .root = b.path("dlib"),
+            .files = &.{
+                "image_loader/jxl_loader.cpp",
+                "image_saver/save_jxl.cpp",
+            },
+            .flags = &cppflags,
+        });
+        dlib.root_module.linkSystemLibrary("libjxl", .{});
+        dlib.root_module.linkSystemLibrary("libjxl_cms", .{});
+        dlib.root_module.linkSystemLibrary("libjxl_threads", .{});
     }
     addDlibMacros(dlib.root_module, features);
     dlib.root_module.addCMacro("DLIB_JPEG_STATIC", "");
@@ -566,6 +581,7 @@ const DlibLink = struct {
 const Features = struct {
     gui: bool,
     webp: bool,
+    jxl: bool,
     cuda: bool,
 };
 
@@ -575,6 +591,7 @@ fn addDlibMacros(module: *std.Build.Module, features: Features) void {
     module.addCMacro("DLIB_PNG_SUPPORT", "1");
     module.addCMacro("DLIB_JPEG_SUPPORT", "1");
     if (features.webp) module.addCMacro("DLIB_WEBP_SUPPORT", "1");
+    if (features.jxl) module.addCMacro("DLIB_JXL_SUPPORT", "1");
     if (!features.gui) module.addCMacro("DLIB_NO_GUI_SUPPORT", "1");
     if (features.cuda) module.addCMacro("DLIB_USE_CUDA", "1");
     module.addCMacro("DLIB_ENABLE_ASSERTS", "1");
