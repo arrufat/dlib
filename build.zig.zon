@@ -1,0 +1,11 @@
+.{
+    .name = .dlib,
+    .version = "20.0.99",
+    .fingerprint = 0xc34e5d96eef1d618,
+    .minimum_zig_version = "0.17.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "dlib",
+    },
+}

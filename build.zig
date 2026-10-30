@@ -1,303 +1,497 @@
 const std = @import("std");
 
+const dlib_version = @import("build.zig.zon").version;
+
+const cflags = [_][]const u8{
+    "-std=c89",
+    "-fno-sanitize=undefined",
+};
+
+const cppflags = [_][]const u8{
+    "-std=c++17",
+    "-fno-sanitize=undefined",
+};
+
+// tools/python/src/dlib.cpp records __DATE__ and __TIME__, which zig rejects by default.
+const python_cppflags = cppflags ++ [_][]const u8{"-Wno-date-time"};
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const strip = optimize != .Debug;
-    const cflags = [_][]const u8{
-        "-std=c89",
-        "-fno-sanitize=undefined",
-    };
-    const cppflags = [_][]const u8{
-        "-std=c++14",
-        "-fPIC",
-        "-fno-sanitize=undefined",
+    const strip = optimize != .debug;
+    const os_tag = target.result.os.tag;
+    const is_native = target.query.isNative();
+
+    // X11 and libwebp come from the host system, so they are off by default when cross-compiling.
+    const features: Features = .{
+        .gui = b.option(bool, "gui", "Build the GUI (X11 on Unix, win32 on Windows)") orelse
+            (is_native or os_tag == .windows),
+        .webp = b.option(bool, "webp", "Build WebP support against the system libwebp") orelse
+            (is_native and os_tag != .windows),
     };
 
-    const zlib = b.addStaticLibrary(.{
+    const zlib = b.addLibrary(.{
         .name = "z",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = .fast,
+            .strip = true,
+            .link_libc = true,
+        }),
     });
-    zlib.root_module.strip = strip;
-    zlib.root_module.optimize = .ReleaseFast;
-    zlib.linkLibC();
-    zlib.addCSourceFiles(.{ .files = &.{
-        "dlib/external/zlib/adler32.c",
-        "dlib/external/zlib/crc32.c",
-        "dlib/external/zlib/deflate.c",
-        "dlib/external/zlib/infback.c",
-        "dlib/external/zlib/inffast.c",
-        "dlib/external/zlib/inflate.c",
-        "dlib/external/zlib/inftrees.c",
-        "dlib/external/zlib/trees.c",
-        "dlib/external/zlib/zutil.c",
-        "dlib/external/zlib/compress.c",
-        "dlib/external/zlib/uncompr.c",
-        "dlib/external/zlib/gzclose.c",
-        "dlib/external/zlib/gzlib.c",
-        "dlib/external/zlib/gzread.c",
-        "dlib/external/zlib/gzwrite.c",
-    }, .flags = &cflags });
+    zlib.root_module.addCSourceFiles(.{
+        .root = b.path("dlib/external/zlib"),
+        .files = &.{
+            "adler32.c",
+            "crc32.c",
+            "deflate.c",
+            "infback.c",
+            "inffast.c",
+            "inflate.c",
+            "inftrees.c",
+            "trees.c",
+            "zutil.c",
+            "compress.c",
+            "uncompr.c",
+            "gzclose.c",
+            "gzlib.c",
+            "gzread.c",
+            "gzwrite.c",
+        },
+        .flags = &cflags,
+    });
     zlib.installHeader(b.path("dlib/external/zlib/zconf.h"), "zconf.h");
     zlib.installHeader(b.path("dlib/external/zlib/zlib.h"), "zlib.h");
     b.installArtifact(zlib);
 
-    const libpng = b.addStaticLibrary(.{
+    const libpng = b.addLibrary(.{
         .name = "png",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = .fast,
+            .strip = true,
+            .link_libc = true,
+        }),
     });
-    libpng.root_module.optimize = .ReleaseFast;
-    libpng.root_module.strip = true;
-    libpng.linkLibC();
-    libpng.addCSourceFiles(.{ .files = &.{
-        "dlib/external/libpng/arm/arm_init.c",
-        "dlib/external/libpng/arm/filter_neon_intrinsics.c",
-        "dlib/external/libpng/arm/palette_neon_intrinsics.c",
-        "dlib/external/libpng/png.c",
-        "dlib/external/libpng/pngerror.c",
-        "dlib/external/libpng/pngget.c",
-        "dlib/external/libpng/pngmem.c",
-        "dlib/external/libpng/pngpread.c",
-        "dlib/external/libpng/pngread.c",
-        "dlib/external/libpng/pngrio.c",
-        "dlib/external/libpng/pngrtran.c",
-        "dlib/external/libpng/pngrutil.c",
-        "dlib/external/libpng/pngset.c",
-        "dlib/external/libpng/pngtrans.c",
-        "dlib/external/libpng/pngwio.c",
-        "dlib/external/libpng/pngwrite.c",
-        "dlib/external/libpng/pngwtran.c",
-        "dlib/external/libpng/pngwutil.c",
-    }, .flags = &cflags });
-    libpng.linkLibrary(zlib);
+    libpng.root_module.addCSourceFiles(.{
+        .root = b.path("dlib/external/libpng"),
+        .files = &.{
+            "png.c",
+            "pngerror.c",
+            "pngget.c",
+            "pngmem.c",
+            "pngpread.c",
+            "pngread.c",
+            "pngrio.c",
+            "pngrtran.c",
+            "pngrutil.c",
+            "pngset.c",
+            "pngtrans.c",
+            "pngwio.c",
+            "pngwrite.c",
+            "pngwtran.c",
+            "pngwutil.c",
+        },
+        .flags = &cflags,
+    });
+    if (target.result.cpu.arch.isArm() or target.result.cpu.arch.isAARCH64()) {
+        libpng.root_module.addCSourceFiles(.{
+            .root = b.path("dlib/external/libpng"),
+            .files = &.{
+                "arm/arm_init.c",
+                "arm/filter_neon_intrinsics.c",
+                "arm/palette_neon_intrinsics.c",
+            },
+            .flags = &cflags,
+        });
+    }
+    libpng.root_module.linkLibrary(zlib);
     libpng.installHeader(b.path("dlib/external/libpng/pnglibconf.h"), "pnglibconf.h");
     libpng.installHeader(b.path("dlib/external/libpng/pngconf.h"), "pngconf.h");
     libpng.installHeader(b.path("dlib/external/libpng/png.h"), "png.h");
-    libpng.installHeader(b.path("dlib/external/libpng/png.h"), "png.h");
     b.installArtifact(libpng);
 
-    const libjpeg = b.addStaticLibrary(.{
+    const libjpeg = b.addLibrary(.{
         .name = "jpeg",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = .fast,
+            .strip = true,
+            .link_libc = true,
+        }),
     });
-    libjpeg.root_module.optimize = .ReleaseFast;
-    libjpeg.root_module.strip = true;
-    libjpeg.linkLibC();
-    libjpeg.addCSourceFiles(.{ .files = &.{
-        "dlib/external/libjpeg/jaricom.c",
-        "dlib/external/libjpeg/jcapimin.c",
-        "dlib/external/libjpeg/jcapistd.c",
-        "dlib/external/libjpeg/jcarith.c",
-        "dlib/external/libjpeg/jccoefct.c",
-        "dlib/external/libjpeg/jccolor.c",
-        "dlib/external/libjpeg/jcdctmgr.c",
-        "dlib/external/libjpeg/jchuff.c",
-        "dlib/external/libjpeg/jcinit.c",
-        "dlib/external/libjpeg/jcmainct.c",
-        "dlib/external/libjpeg/jcmarker.c",
-        "dlib/external/libjpeg/jcmaster.c",
-        "dlib/external/libjpeg/jcomapi.c",
-        "dlib/external/libjpeg/jcparam.c",
-        "dlib/external/libjpeg/jcprepct.c",
-        "dlib/external/libjpeg/jcsample.c",
-        "dlib/external/libjpeg/jdapimin.c",
-        "dlib/external/libjpeg/jdapistd.c",
-        "dlib/external/libjpeg/jdarith.c",
-        "dlib/external/libjpeg/jdatadst.c",
-        "dlib/external/libjpeg/jdatasrc.c",
-        "dlib/external/libjpeg/jdcoefct.c",
-        "dlib/external/libjpeg/jdcolor.c",
-        "dlib/external/libjpeg/jddctmgr.c",
-        "dlib/external/libjpeg/jdhuff.c",
-        "dlib/external/libjpeg/jdinput.c",
-        "dlib/external/libjpeg/jdmainct.c",
-        "dlib/external/libjpeg/jdmarker.c",
-        "dlib/external/libjpeg/jdmaster.c",
-        "dlib/external/libjpeg/jdmerge.c",
-        "dlib/external/libjpeg/jdpostct.c",
-        "dlib/external/libjpeg/jdsample.c",
-        "dlib/external/libjpeg/jerror.c",
-        "dlib/external/libjpeg/jfdctflt.c",
-        "dlib/external/libjpeg/jfdctfst.c",
-        "dlib/external/libjpeg/jfdctint.c",
-        "dlib/external/libjpeg/jidctflt.c",
-        "dlib/external/libjpeg/jidctfst.c",
-        "dlib/external/libjpeg/jidctint.c",
-        "dlib/external/libjpeg/jmemmgr.c",
-        "dlib/external/libjpeg/jmemnobs.c",
-        "dlib/external/libjpeg/jquant1.c",
-        "dlib/external/libjpeg/jquant2.c",
-        "dlib/external/libjpeg/jutils.c",
-    }, .flags = &cflags });
+    libjpeg.root_module.addCSourceFiles(.{
+        .root = b.path("dlib/external/libjpeg"),
+        .files = &.{
+            "jaricom.c",
+            "jcapimin.c",
+            "jcapistd.c",
+            "jcarith.c",
+            "jccoefct.c",
+            "jccolor.c",
+            "jcdctmgr.c",
+            "jchuff.c",
+            "jcinit.c",
+            "jcmainct.c",
+            "jcmarker.c",
+            "jcmaster.c",
+            "jcomapi.c",
+            "jcparam.c",
+            "jcprepct.c",
+            "jcsample.c",
+            "jdapimin.c",
+            "jdapistd.c",
+            "jdarith.c",
+            "jdatadst.c",
+            "jdatasrc.c",
+            "jdcoefct.c",
+            "jdcolor.c",
+            "jddctmgr.c",
+            "jdhuff.c",
+            "jdinput.c",
+            "jdmainct.c",
+            "jdmarker.c",
+            "jdmaster.c",
+            "jdmerge.c",
+            "jdpostct.c",
+            "jdsample.c",
+            "jerror.c",
+            "jfdctflt.c",
+            "jfdctfst.c",
+            "jfdctint.c",
+            "jidctflt.c",
+            "jidctfst.c",
+            "jidctint.c",
+            "jmemmgr.c",
+            "jmemnobs.c",
+            "jquant1.c",
+            "jquant2.c",
+            "jutils.c",
+        },
+        .flags = &cflags,
+    });
     libjpeg.installHeader(b.path("dlib/external/libjpeg/jconfig.h"), "jconfig.h");
     libjpeg.installHeader(b.path("dlib/external/libjpeg/jmorecfg.h"), "jmorecfg.h");
     libjpeg.installHeader(b.path("dlib/external/libjpeg/jpeglib.h"), "jpeglib.h");
     b.installArtifact(libjpeg);
 
-    const dlib = b.addStaticLibrary(.{
+    const dlib = b.addLibrary(.{
         .name = "dlib",
-        .target = target,
-        .optimize = optimize,
-    });
-    if (dlib.root_module.optimize != .Debug)
-        dlib.root_module.strip = strip;
-    dlib.linkLibCpp();
-    dlib.addCSourceFiles(.{ .files = &.{
-        "dlib/base64/base64_kernel_1.cpp",
-        "dlib/bigint/bigint_kernel_1.cpp",
-        "dlib/bigint/bigint_kernel_2.cpp",
-        "dlib/bit_stream/bit_stream_kernel_1.cpp",
-        "dlib/entropy_decoder/entropy_decoder_kernel_1.cpp",
-        "dlib/entropy_decoder/entropy_decoder_kernel_2.cpp",
-        "dlib/entropy_encoder/entropy_encoder_kernel_1.cpp",
-        "dlib/entropy_encoder/entropy_encoder_kernel_2.cpp",
-        "dlib/md5/md5_kernel_1.cpp",
-        "dlib/tokenizer/tokenizer_kernel_1.cpp",
-        "dlib/unicode/unicode.cpp",
-        "dlib/test_for_odr_violations.cpp",
-        "dlib/sockets/sockets_kernel_1.cpp",
-        "dlib/bsp/bsp.cpp",
-        "dlib/dir_nav/dir_nav_kernel_1.cpp",
-        "dlib/dir_nav/dir_nav_kernel_2.cpp",
-        "dlib/dir_nav/dir_nav_extensions.cpp",
-        "dlib/linker/linker_kernel_1.cpp",
-        "dlib/logger/extra_logger_headers.cpp",
-        "dlib/logger/logger_kernel_1.cpp",
-        "dlib/logger/logger_config_file.cpp",
-        "dlib/misc_api/misc_api_kernel_1.cpp",
-        "dlib/misc_api/misc_api_kernel_2.cpp",
-        "dlib/sockets/sockets_extensions.cpp",
-        "dlib/sockets/sockets_kernel_2.cpp",
-        "dlib/sockstreambuf/sockstreambuf.cpp",
-        "dlib/sockstreambuf/sockstreambuf_unbuffered.cpp",
-        "dlib/server/server_kernel.cpp",
-        "dlib/server/server_iostream.cpp",
-        "dlib/server/server_http.cpp",
-        "dlib/threads/multithreaded_object_extension.cpp",
-        "dlib/threads/threaded_object_extension.cpp",
-        "dlib/threads/threads_kernel_1.cpp",
-        "dlib/threads/threads_kernel_2.cpp",
-        "dlib/threads/threads_kernel_shared.cpp",
-        "dlib/threads/thread_pool_extension.cpp",
-        "dlib/threads/async.cpp",
-        "dlib/timer/timer.cpp",
-        "dlib/stack_trace.cpp",
-        "dlib/image_loader/png_loader.cpp",
-        "dlib/image_saver/save_png.cpp",
-        "dlib/image_loader/jpeg_loader.cpp",
-        "dlib/image_saver/save_jpeg.cpp",
-        "dlib/image_loader/jpeg_loader.cpp",
-        "dlib/image_saver/save_jpeg.cpp",
-        "dlib/image_loader/webp_loader.cpp",
-        "dlib/image_saver/save_webp.cpp",
-        "dlib/gui_widgets/fonts.cpp",
-        "dlib/gui_widgets/widgets.cpp",
-        "dlib/gui_widgets/drawable.cpp",
-        "dlib/gui_widgets/canvas_drawing.cpp",
-        "dlib/gui_widgets/style.cpp",
-        "dlib/gui_widgets/base_widgets.cpp",
-        "dlib/gui_core/gui_core_kernel_1.cpp",
-        "dlib/gui_core/gui_core_kernel_2.cpp",
-        "dlib/cuda/cpu_dlib.cpp",
-        "dlib/cuda/tensor_tools.cpp",
-        "dlib/data_io/image_dataset_metadata.cpp",
-        "dlib/data_io/mnist.cpp",
-        "dlib/data_io/cifar.cpp",
-        "dlib/svm/auto.cpp",
-        "dlib/global_optimization/global_function_search.cpp",
-        "dlib/filtering/kalman_filter.cpp",
-    }, .flags = &cppflags });
-    dlib.defineCMacro("DLIB_PNG_SUPPORT", "1");
-    dlib.defineCMacro("DLIB_JPEG_SUPPORT", "1");
-    dlib.defineCMacro("DLIB_ENABLE_ASSERTS", "1");
-    dlib.defineCMacro("DLIB_ENABLE_STACK_TRACE", "1");
-    dlib.defineCMacro("USE_AVX_INSTRUCTIONS", "1");
-    dlib.defineCMacro("USE_SS2_INSTRUCTIONS", "1");
-    dlib.defineCMacro("USE_SS4_INSTRUCTIONS", "1");
-    dlib.defineCMacro("DLIB_JPEG_STATIC", "");
-    dlib.linkLibrary(libpng);
-    dlib.linkLibrary(libjpeg);
-    dlib.installHeadersDirectory(b.path("dlib"), "dlib", .{});
-    if (target.result.os.tag != .windows) {
-        dlib.defineCMacro("DLIB_WEBP_SUPPORT", "1");
-        dlib.linkSystemLibrary("libwebp");
-        dlib.linkSystemLibrary("pthread");
-        dlib.linkSystemLibrary("X11");
-    }
-    b.installArtifact(dlib);
-
-    const examples = [_][]const u8{
-        "assignment_learning_ex",
-        "max_cost_assignment_ex",
-        "image_ex",
-    };
-
-    for (examples) |example| {
-        const exe = b.addExecutable(.{
-            .name = example,
+        .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
+            .strip = strip,
+            .link_libcpp = true,
+            .pic = true,
+        }),
+    });
+    dlib.root_module.addCSourceFiles(.{
+        .root = b.path("dlib"),
+        .files = &.{
+            "base64/base64_kernel_1.cpp",
+            "bigint/bigint_kernel_1.cpp",
+            "bigint/bigint_kernel_2.cpp",
+            "bit_stream/bit_stream_kernel_1.cpp",
+            "entropy_decoder/entropy_decoder_kernel_1.cpp",
+            "entropy_decoder/entropy_decoder_kernel_2.cpp",
+            "entropy_encoder/entropy_encoder_kernel_1.cpp",
+            "entropy_encoder/entropy_encoder_kernel_2.cpp",
+            "md5/md5_kernel_1.cpp",
+            "tokenizer/tokenizer_kernel_1.cpp",
+            "unicode/unicode.cpp",
+            "test_for_odr_violations.cpp",
+            "fft/fft.cpp",
+            "sockets/sockets_kernel_1.cpp",
+            "bsp/bsp.cpp",
+            "dir_nav/dir_nav_kernel_1.cpp",
+            "dir_nav/dir_nav_kernel_2.cpp",
+            "dir_nav/dir_nav_extensions.cpp",
+            "linker/linker_kernel_1.cpp",
+            "logger/extra_logger_headers.cpp",
+            "logger/logger_kernel_1.cpp",
+            "logger/logger_config_file.cpp",
+            "misc_api/misc_api_kernel_1.cpp",
+            "misc_api/misc_api_kernel_2.cpp",
+            "sockets/sockets_extensions.cpp",
+            "sockets/sockets_kernel_2.cpp",
+            "sockstreambuf/sockstreambuf.cpp",
+            "sockstreambuf/sockstreambuf_unbuffered.cpp",
+            "server/server_kernel.cpp",
+            "server/server_iostream.cpp",
+            "server/server_http.cpp",
+            "threads/multithreaded_object_extension.cpp",
+            "threads/threaded_object_extension.cpp",
+            "threads/threads_kernel_1.cpp",
+            "threads/threads_kernel_2.cpp",
+            "threads/threads_kernel_shared.cpp",
+            "threads/thread_pool_extension.cpp",
+            "threads/async.cpp",
+            "timer/timer.cpp",
+            "stack_trace.cpp",
+            "image_loader/png_loader.cpp",
+            "image_saver/save_png.cpp",
+            "image_loader/jpeg_loader.cpp",
+            "image_saver/save_jpeg.cpp",
+            "gui_widgets/fonts.cpp",
+            "cuda/cpu_dlib.cpp",
+            "cuda/tensor_tools.cpp",
+            "data_io/image_dataset_metadata.cpp",
+            "data_io/mnist.cpp",
+            "data_io/cifar.cpp",
+            "svm/auto.cpp",
+            "global_optimization/global_function_search.cpp",
+            "filtering/kalman_filter.cpp",
+        },
+        .flags = &cppflags,
+    });
+    if (features.gui) {
+        dlib.root_module.addCSourceFiles(.{
+            .root = b.path("dlib"),
+            .files = &.{
+                "gui_widgets/widgets.cpp",
+                "gui_widgets/drawable.cpp",
+                "gui_widgets/canvas_drawing.cpp",
+                "gui_widgets/style.cpp",
+                "gui_widgets/base_widgets.cpp",
+                "gui_core/gui_core_kernel_1.cpp",
+                "gui_core/gui_core_kernel_2.cpp",
+            },
+            .flags = &cppflags,
         });
-        exe.addCSourceFile(.{
+    }
+    if (features.webp) {
+        dlib.root_module.addCSourceFiles(.{
+            .root = b.path("dlib"),
+            .files = &.{
+                "image_loader/webp_loader.cpp",
+                "image_saver/save_webp.cpp",
+            },
+            .flags = &cppflags,
+        });
+        dlib.root_module.linkSystemLibrary("libwebp", .{});
+    }
+    addDlibMacros(dlib.root_module, features);
+    dlib.root_module.addCMacro("DLIB_JPEG_STATIC", "");
+    dlib.root_module.linkLibrary(libpng);
+    dlib.root_module.linkLibrary(libjpeg);
+    if (os_tag == .windows) {
+        dlib.root_module.linkSystemLibrary("ws2_32", .{});
+        dlib.root_module.linkSystemLibrary("winmm", .{});
+        if (features.gui) {
+            dlib.root_module.linkSystemLibrary("comctl32", .{});
+            dlib.root_module.linkSystemLibrary("gdi32", .{});
+            dlib.root_module.linkSystemLibrary("imm32", .{});
+        }
+    } else {
+        dlib.root_module.linkSystemLibrary("pthread", .{});
+        if (features.gui) dlib.root_module.linkSystemLibrary("X11", .{});
+    }
+    dlib.installHeadersDirectory(b.path("dlib"), "dlib", .{});
+    b.installArtifact(dlib);
+
+    const examples = [_]struct { []const u8, bool }{
+        .{ "assignment_learning_ex", false },
+        .{ "max_cost_assignment_ex", false },
+        .{ "image_ex", true },
+    };
+
+    for (examples) |entry| {
+        const example, const needs_gui = entry;
+        if (needs_gui and !features.gui) continue;
+        const exe = b.addExecutable(.{
+            .name = example,
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+                .strip = strip,
+                .link_libcpp = true,
+            }),
+        });
+        exe.root_module.addCSourceFile(.{
             .file = b.path(b.fmt("examples/{s}.cpp", .{example})),
             .flags = &cppflags,
         });
-        exe.linkLibCpp();
-        exe.linkLibrary(dlib);
-        exe.defineCMacro("DLIB_PNG_SUPPORT", "1");
-        exe.defineCMacro("DLIB_JPEG_SUPPORT", "1");
-        if (target.result.os.tag != .windows) {
-            exe.defineCMacro("DLIB_WEBP_SUPPORT", "1");
-        }
-        exe.defineCMacro("DLIB_ENABLE_ASSERTS", "1");
-        exe.defineCMacro("DLIB_ENABLE_STACK_TRACE", "1");
-        exe.root_module.strip = strip;
+        addDlibMacros(exe.root_module, features);
+        exe.root_module.linkLibrary(dlib);
         b.installArtifact(exe);
     }
 
-    const pybind11 = b.addSharedLibrary(.{
-        .name = "pybind11",
-        .target = target,
-        .optimize = optimize,
+    buildPythonModule(b, target, optimize, strip, features, dlib);
+}
+
+fn buildPythonModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.Optimize,
+    strip: bool,
+    features: Features,
+    dlib: *std.Build.Step.Compile,
+) void {
+    const os_tag = target.result.os.tag;
+    const is_native = target.query.isNative();
+
+    const step = b.step("python", "Build the _dlib_pybind11 Python extension module");
+
+    const include_option = b.option(
+        std.Build.LazyPath,
+        "python-include",
+        "Python headers for the target (default: from the host Python)",
+    );
+    const ext_suffix_option = b.option(
+        []const u8,
+        "python-ext-suffix",
+        "Extension module suffix, e.g. .cpython-314-x86_64-linux-gnu.so (default: from the host Python for native builds)",
+    );
+    const import_lib_option = b.option(
+        std.Build.LazyPath,
+        "python-lib",
+        "Python import library (python3XX.lib) for Windows targets (default: from the host Python for native builds)",
+    );
+
+    // build.zig runs before the requested step is known, so a missing Python
+    // must only fail `zig build python`, not the rest of the build.
+    const needs_host = include_option == null or (is_native and
+        (ext_suffix_option == null or (os_tag == .windows and import_lib_option == null)));
+    const host = if (needs_host) queryHostPython(b) else null;
+    if (needs_host and host == null) {
+        step.dependOn(&b.addFail("could not run python3 or python to locate the Python headers; " ++
+            "install Python or pass -Dpython-include").step);
+        return;
+    }
+
+    const include_dir = include_option orelse std.Build.LazyPath{ .cwd_relative = host.?.include };
+    // Python also accepts a bare ".so"/".pyd", which is the safe choice when the
+    // host interpreter does not describe the target.
+    const ext_suffix = ext_suffix_option orelse if (is_native)
+        host.?.ext_suffix
+    else if (os_tag == .windows) ".pyd" else ".so";
+    const import_lib = import_lib_option orelse if (os_tag == .windows and is_native)
+        std.Build.LazyPath{ .cwd_relative = host.?.import_lib }
+    else
+        null;
+
+    const module = b.addLibrary(.{
+        .name = "_dlib_pybind11",
+        .linkage = .dynamic,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .strip = strip,
+            .link_libcpp = true,
+        }),
     });
-    pybind11.root_module.strip = strip;
-    pybind11.linkLibCpp();
-    pybind11.linkSystemLibrary("python3");
-    pybind11.addIncludePath(b.path("dlib/external/pybind11/include"));
-    pybind11.addCSourceFiles(.{ .files = &.{
-        "tools/python/src/dlib.cpp",
-        "tools/python/src/matrix.cpp",
-        "tools/python/src/vector.cpp",
-        "tools/python/src/svm_c_trainer.cpp",
-        "tools/python/src/svm_rank_trainer.cpp",
-        "tools/python/src/decision_functions.cpp",
-        "tools/python/src/other.cpp",
-        "tools/python/src/basic.cpp",
-        "tools/python/src/cca.cpp",
-        "tools/python/src/sequence_segmenter.cpp",
-        "tools/python/src/svm_struct.cpp",
-        "tools/python/src/image.cpp",
-        "tools/python/src/image2.cpp",
-        "tools/python/src/image3.cpp",
-        "tools/python/src/image4.cpp",
-        "tools/python/src/rectangles.cpp",
-        "tools/python/src/object_detection.cpp",
-        "tools/python/src/shape_predictor.cpp",
-        "tools/python/src/correlation_tracker.cpp",
-        "tools/python/src/face_recognition.cpp",
-        "tools/python/src/cnn_face_detector.cpp",
-        "tools/python/src/global_optimization.cpp",
-        "tools/python/src/image_dataset_metadata.cpp",
-        "tools/python/src/numpy_returns.cpp",
-        "tools/python/src/line.cpp",
-    }, .flags = &cppflags });
-    pybind11.defineCMacro("DLIB_PNG_SUPPORT", "1");
-    pybind11.defineCMacro("DLIB_JPEG_SUPPORT", "1");
-    pybind11.defineCMacro("DLIB_NO_GUI_SUPPORT", "1");
-    pybind11.defineCMacro("DLIB_NO_ABORT_ON_2ND_FATAL_ERROR", null);
-    pybind11.linkLibrary(dlib);
-    b.installArtifact(pybind11);
+    module.root_module.addSystemIncludePath(include_dir);
+    module.root_module.addIncludePath(b.path("dlib/external/pybind11/include"));
+    module.root_module.addCSourceFiles(.{
+        .root = b.path("tools/python/src"),
+        .files = &.{
+                "dlib.cpp",
+                "matrix.cpp",
+                "vector.cpp",
+                "svm_c_trainer.cpp",
+                "svm_rank_trainer.cpp",
+                "decision_functions.cpp",
+                "other.cpp",
+                "basic.cpp",
+                "cca.cpp",
+                "sequence_segmenter.cpp",
+                "svm_struct.cpp",
+                "image.cpp",
+                "image2.cpp",
+                "image3.cpp",
+                "image4.cpp",
+                "rectangles.cpp",
+                "object_detection.cpp",
+                "shape_predictor.cpp",
+                "correlation_tracker.cpp",
+                "face_recognition.cpp",
+                "cnn_face_detector.cpp",
+                "global_optimization.cpp",
+                "image_dataset_metadata.cpp",
+                "numpy_returns.cpp",
+                "line.cpp",
+            },
+        .flags = &python_cppflags,
+    });
+    if (features.gui) {
+        module.root_module.addCSourceFile(.{
+            .file = b.path("tools/python/src/gui.cpp"),
+            .flags = &python_cppflags,
+        });
+    }
+    addDlibMacros(module.root_module, features);
+    module.root_module.addCMacro("DLIB_VERSION", dlib_version);
+    module.root_module.addCMacro("DLIB_NO_ABORT_ON_2ND_FATAL_ERROR", "");
+    module.root_module.linkLibrary(dlib);
+
+    // libpython symbols are resolved by the interpreter that loads the module,
+    // except on Windows, where the module must link the import library.
+    switch (os_tag) {
+        .windows => if (import_lib) |lib| {
+            module.root_module.addObjectFile(lib);
+            // pyconfig.h only defines this for MSVC, but zig targets the GNU ABI.
+            if (target.result.ptrBitWidth() == 64) module.root_module.addCMacro("MS_WIN64", "");
+        } else {
+            module.step.dependOn(&b.addFail("-Dpython-lib is required when targeting Windows").step);
+        },
+        .macos => module.linker_allow_shlib_undefined = true,
+        else => {},
+    }
+
+    const install = b.addInstallArtifact(module, .{
+        .dest_dir = .{ .override = .lib },
+        .dest_sub_path = b.fmt("_dlib_pybind11{s}", .{ext_suffix}),
+        .implib_dir = .disabled,
+        .dylib_symlinks = false,
+    });
+    step.dependOn(&install.step);
+}
+
+const HostPython = struct {
+    include: []const u8,
+    ext_suffix: []const u8,
+    import_lib: []const u8,
+};
+
+fn queryHostPython(b: *std.Build) ?HostPython {
+    const script =
+        \\import os, sys, sysconfig
+        \\print(sysconfig.get_paths()["include"])
+        \\print(sysconfig.get_config_var("EXT_SUFFIX"))
+        \\print(os.path.join(sys.base_prefix, "libs", "python%d%d.lib" % sys.version_info[:2]))
+    ;
+    // Windows installs usually provide `python` but not `python3`.
+    for ([_][]const u8{ "python3", "python" }) |exe| {
+        var exit_code: u8 = undefined;
+        const out = b.runAllowFail(&.{ exe, "-c", script }, &exit_code, .ignore) catch continue;
+        var lines = std.mem.tokenizeAny(u8, out, "\r\n");
+        const host: HostPython = .{
+            .include = lines.next() orelse continue,
+            .ext_suffix = lines.next() orelse continue,
+            .import_lib = lines.next() orelse continue,
+        };
+        // zig caches the configure phase, so tie it to the Python version to
+        // pick up upgrades.
+        b.dependOnFileContents(.{ .cwd_relative = b.pathJoin(&.{ host.include, "patchlevel.h" }) });
+        return host;
+    }
+    // Nothing to track; re-run configure until Python shows up.
+    b.graph.poisonCache();
+    return null;
+}
+
+const Features = struct {
+    gui: bool,
+    webp: bool,
+};
+
+/// Macros that must match between dlib and anything that links against it,
+/// otherwise test_for_odr_violations reports a mismatch at link time.
+fn addDlibMacros(module: *std.Build.Module, features: Features) void {
+    module.addCMacro("DLIB_PNG_SUPPORT", "1");
+    module.addCMacro("DLIB_JPEG_SUPPORT", "1");
+    if (features.webp) module.addCMacro("DLIB_WEBP_SUPPORT", "1");
+    if (!features.gui) module.addCMacro("DLIB_NO_GUI_SUPPORT", "1");
+    module.addCMacro("DLIB_ENABLE_ASSERTS", "1");
+    module.addCMacro("DLIB_ENABLE_STACK_TRACE", "1");
 }
