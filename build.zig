@@ -30,153 +30,11 @@ pub fn build(b: *std.Build) void {
             (is_native and os_tag != .windows),
         .jxl = b.option(bool, "jxl", "Build JPEG XL support against the system libjxl") orelse
             (is_native and os_tag != .windows),
+        // On by default, so -fsys=libpng or -fsys=libjpeg alone picks the system library.
+        .png = b.option(bool, "png", "Build PNG support (bundled libpng and zlib unless -fsys=libpng or -fsys=zlib)") orelse true,
+        .jpeg = b.option(bool, "jpeg", "Build JPEG support (bundled libjpeg unless -fsys=libjpeg)") orelse true,
         .cuda = b.option(bool, "cuda", "Build the CUDA/cuDNN backend (needs nvcc and cuDNN)") orelse false,
     };
-
-    const zlib = b.addLibrary(.{
-        .name = "z",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = .fast,
-            .strip = true,
-            .link_libc = true,
-        }),
-    });
-    zlib.root_module.addCSourceFiles(.{
-        .root = b.path("dlib/external/zlib"),
-        .files = &.{
-            "adler32.c",
-            "crc32.c",
-            "deflate.c",
-            "infback.c",
-            "inffast.c",
-            "inflate.c",
-            "inftrees.c",
-            "trees.c",
-            "zutil.c",
-            "compress.c",
-            "uncompr.c",
-            "gzclose.c",
-            "gzlib.c",
-            "gzread.c",
-            "gzwrite.c",
-        },
-        .flags = &cflags,
-    });
-    zlib.installHeader(b.path("dlib/external/zlib/zconf.h"), "zconf.h");
-    zlib.installHeader(b.path("dlib/external/zlib/zlib.h"), "zlib.h");
-    b.installArtifact(zlib);
-
-    const libpng = b.addLibrary(.{
-        .name = "png",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = .fast,
-            .strip = true,
-            .link_libc = true,
-        }),
-    });
-    libpng.root_module.addCSourceFiles(.{
-        .root = b.path("dlib/external/libpng"),
-        .files = &.{
-            "png.c",
-            "pngerror.c",
-            "pngget.c",
-            "pngmem.c",
-            "pngpread.c",
-            "pngread.c",
-            "pngrio.c",
-            "pngrtran.c",
-            "pngrutil.c",
-            "pngset.c",
-            "pngtrans.c",
-            "pngwio.c",
-            "pngwrite.c",
-            "pngwtran.c",
-            "pngwutil.c",
-        },
-        .flags = &cflags,
-    });
-    if (target.result.cpu.arch.isArm() or target.result.cpu.arch.isAARCH64()) {
-        libpng.root_module.addCSourceFiles(.{
-            .root = b.path("dlib/external/libpng"),
-            .files = &.{
-                "arm/arm_init.c",
-                "arm/filter_neon_intrinsics.c",
-                "arm/palette_neon_intrinsics.c",
-            },
-            .flags = &cflags,
-        });
-    }
-    libpng.root_module.linkLibrary(zlib);
-    libpng.installHeader(b.path("dlib/external/libpng/pnglibconf.h"), "pnglibconf.h");
-    libpng.installHeader(b.path("dlib/external/libpng/pngconf.h"), "pngconf.h");
-    libpng.installHeader(b.path("dlib/external/libpng/png.h"), "png.h");
-    b.installArtifact(libpng);
-
-    const libjpeg = b.addLibrary(.{
-        .name = "jpeg",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = .fast,
-            .strip = true,
-            .link_libc = true,
-        }),
-    });
-    libjpeg.root_module.addCSourceFiles(.{
-        .root = b.path("dlib/external/libjpeg"),
-        .files = &.{
-            "jaricom.c",
-            "jcapimin.c",
-            "jcapistd.c",
-            "jcarith.c",
-            "jccoefct.c",
-            "jccolor.c",
-            "jcdctmgr.c",
-            "jchuff.c",
-            "jcinit.c",
-            "jcmainct.c",
-            "jcmarker.c",
-            "jcmaster.c",
-            "jcomapi.c",
-            "jcparam.c",
-            "jcprepct.c",
-            "jcsample.c",
-            "jdapimin.c",
-            "jdapistd.c",
-            "jdarith.c",
-            "jdatadst.c",
-            "jdatasrc.c",
-            "jdcoefct.c",
-            "jdcolor.c",
-            "jddctmgr.c",
-            "jdhuff.c",
-            "jdinput.c",
-            "jdmainct.c",
-            "jdmarker.c",
-            "jdmaster.c",
-            "jdmerge.c",
-            "jdpostct.c",
-            "jdsample.c",
-            "jerror.c",
-            "jfdctflt.c",
-            "jfdctfst.c",
-            "jfdctint.c",
-            "jidctflt.c",
-            "jidctfst.c",
-            "jidctint.c",
-            "jmemmgr.c",
-            "jmemnobs.c",
-            "jquant1.c",
-            "jquant2.c",
-            "jutils.c",
-        },
-        .flags = &cflags,
-    });
-    libjpeg.installHeader(b.path("dlib/external/libjpeg/jconfig.h"), "jconfig.h");
-    libjpeg.installHeader(b.path("dlib/external/libjpeg/jmorecfg.h"), "jmorecfg.h");
-    libjpeg.installHeader(b.path("dlib/external/libjpeg/jpeglib.h"), "jpeglib.h");
-    b.installArtifact(libjpeg);
 
     const dlib = b.addLibrary(.{
         .name = "dlib",
@@ -231,10 +89,6 @@ pub fn build(b: *std.Build) void {
             "threads/async.cpp",
             "timer/timer.cpp",
             "stack_trace.cpp",
-            "image_loader/png_loader.cpp",
-            "image_saver/save_png.cpp",
-            "image_loader/jpeg_loader.cpp",
-            "image_saver/save_jpeg.cpp",
             "gui_widgets/fonts.cpp",
             "cuda/cpu_dlib.cpp",
             "cuda/tensor_tools.cpp",
@@ -262,6 +116,37 @@ pub fn build(b: *std.Build) void {
             .flags = &cppflags,
         });
     }
+    if (features.png) {
+        dlib.root_module.addCSourceFiles(.{
+            .root = b.path("dlib"),
+            .files = &.{
+                "image_loader/png_loader.cpp",
+                "image_saver/save_png.cpp",
+            },
+            .flags = &cppflags,
+        });
+        if (b.systemIntegrationOption("libpng", .{})) {
+            dlib.root_module.linkSystemLibrary("libpng", .{});
+        } else {
+            dlib.root_module.linkLibrary(addBundledLibpng(b, target));
+        }
+    }
+    if (features.jpeg) {
+        dlib.root_module.addCSourceFiles(.{
+            .root = b.path("dlib"),
+            .files = &.{
+                "image_loader/jpeg_loader.cpp",
+                "image_saver/save_jpeg.cpp",
+            },
+            .flags = &cppflags,
+        });
+        if (b.systemIntegrationOption("libjpeg", .{})) {
+            dlib.root_module.linkSystemLibrary("libjpeg", .{});
+        } else {
+            dlib.root_module.linkLibrary(addBundledLibjpeg(b, target));
+            dlib.root_module.addCMacro("DLIB_JPEG_STATIC", "");
+        }
+    }
     if (features.webp) {
         dlib.root_module.addCSourceFiles(.{
             .root = b.path("dlib"),
@@ -287,11 +172,8 @@ pub fn build(b: *std.Build) void {
         dlib.root_module.linkSystemLibrary("libjxl_threads", .{});
     }
     addDlibMacros(dlib.root_module, features);
-    dlib.root_module.addCMacro("DLIB_JPEG_STATIC", "");
     // nvcc reuses dlib's macros, so this has to come after them.
     const cuda_lib_dir = if (features.cuda) addCuda(b, dlib, optimize) else null;
-    dlib.root_module.linkLibrary(libpng);
-    dlib.root_module.linkLibrary(libjpeg);
     if (os_tag == .windows) {
         dlib.root_module.linkSystemLibrary("ws2_32", .{});
         dlib.root_module.linkSystemLibrary("winmm", .{});
@@ -348,7 +230,6 @@ fn buildPythonModule(
     const is_native = target.query.isNative();
 
     const step = b.step("python", "Build the _dlib_pybind11 Python extension module");
-
     const include_option = b.option(
         std.Build.LazyPath,
         "python-include",
@@ -364,6 +245,13 @@ fn buildPythonModule(
         "python-lib",
         "Python import library (python3XX.lib) for Windows targets (default: from the host Python for native builds)",
     );
+
+    // The Python API always offers PNG and JPEG, and face_recognition.cpp
+    // calls save_jpeg unconditionally.
+    if (!dlib.features.png or !dlib.features.jpeg) {
+        step.dependOn(&b.addFail("the Python module needs PNG and JPEG support; drop -Dpng=false and -Djpeg=false").step);
+        return;
+    }
 
     // build.zig runs before the requested step is known, so a missing Python
     // must only fail `zig build python`, not the rest of the build.
@@ -496,6 +384,147 @@ fn queryHostPython(b: *std.Build) ?HostPython {
     return null;
 }
 
+/// The C libraries vendored in dlib/external are always optimized, even in
+/// debug builds of dlib.
+fn addBundledCLib(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    name: []const u8,
+    root: []const u8,
+    files: []const []const u8,
+) *std.Build.Step.Compile {
+    const lib = b.addLibrary(.{
+        .name = name,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = .fast,
+            .strip = true,
+            .link_libc = true,
+        }),
+    });
+    lib.root_module.addCSourceFiles(.{ .root = b.path(root), .files = files, .flags = &cflags });
+    return lib;
+}
+
+fn addBundledZlib(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step.Compile {
+    const zlib = addBundledCLib(b, target, "z", "dlib/external/zlib", &.{
+        "adler32.c",
+        "crc32.c",
+        "deflate.c",
+        "infback.c",
+        "inffast.c",
+        "inflate.c",
+        "inftrees.c",
+        "trees.c",
+        "zutil.c",
+        "compress.c",
+        "uncompr.c",
+        "gzclose.c",
+        "gzlib.c",
+        "gzread.c",
+        "gzwrite.c",
+    });
+    zlib.installHeader(b.path("dlib/external/zlib/zconf.h"), "zconf.h");
+    zlib.installHeader(b.path("dlib/external/zlib/zlib.h"), "zlib.h");
+    b.installArtifact(zlib);
+    return zlib;
+}
+
+fn addBundledLibpng(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step.Compile {
+    const libpng = addBundledCLib(b, target, "png", "dlib/external/libpng", &.{
+        "png.c",
+        "pngerror.c",
+        "pngget.c",
+        "pngmem.c",
+        "pngpread.c",
+        "pngread.c",
+        "pngrio.c",
+        "pngrtran.c",
+        "pngrutil.c",
+        "pngset.c",
+        "pngtrans.c",
+        "pngwio.c",
+        "pngwrite.c",
+        "pngwtran.c",
+        "pngwutil.c",
+    });
+    if (target.result.cpu.arch.isArm() or target.result.cpu.arch.isAARCH64()) {
+        libpng.root_module.addCSourceFiles(.{
+            .root = b.path("dlib/external/libpng"),
+            .files = &.{
+                "arm/arm_init.c",
+                "arm/filter_neon_intrinsics.c",
+                "arm/palette_neon_intrinsics.c",
+            },
+            .flags = &cflags,
+        });
+    }
+    if (b.systemIntegrationOption("zlib", .{})) {
+        libpng.root_module.linkSystemLibrary("zlib", .{});
+    } else {
+        libpng.root_module.linkLibrary(addBundledZlib(b, target));
+    }
+    libpng.installHeader(b.path("dlib/external/libpng/pnglibconf.h"), "pnglibconf.h");
+    libpng.installHeader(b.path("dlib/external/libpng/pngconf.h"), "pngconf.h");
+    libpng.installHeader(b.path("dlib/external/libpng/png.h"), "png.h");
+    b.installArtifact(libpng);
+    return libpng;
+}
+
+fn addBundledLibjpeg(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step.Compile {
+    const libjpeg = addBundledCLib(b, target, "jpeg", "dlib/external/libjpeg", &.{
+        "jaricom.c",
+        "jcapimin.c",
+        "jcapistd.c",
+        "jcarith.c",
+        "jccoefct.c",
+        "jccolor.c",
+        "jcdctmgr.c",
+        "jchuff.c",
+        "jcinit.c",
+        "jcmainct.c",
+        "jcmarker.c",
+        "jcmaster.c",
+        "jcomapi.c",
+        "jcparam.c",
+        "jcprepct.c",
+        "jcsample.c",
+        "jdapimin.c",
+        "jdapistd.c",
+        "jdarith.c",
+        "jdatadst.c",
+        "jdatasrc.c",
+        "jdcoefct.c",
+        "jdcolor.c",
+        "jddctmgr.c",
+        "jdhuff.c",
+        "jdinput.c",
+        "jdmainct.c",
+        "jdmarker.c",
+        "jdmaster.c",
+        "jdmerge.c",
+        "jdpostct.c",
+        "jdsample.c",
+        "jerror.c",
+        "jfdctflt.c",
+        "jfdctfst.c",
+        "jfdctint.c",
+        "jidctflt.c",
+        "jidctfst.c",
+        "jidctint.c",
+        "jmemmgr.c",
+        "jmemnobs.c",
+        "jquant1.c",
+        "jquant2.c",
+        "jutils.c",
+    });
+    libjpeg.installHeader(b.path("dlib/external/libjpeg/jconfig.h"), "jconfig.h");
+    libjpeg.installHeader(b.path("dlib/external/libjpeg/jmorecfg.h"), "jmorecfg.h");
+    libjpeg.installHeader(b.path("dlib/external/libjpeg/jpeglib.h"), "jpeglib.h");
+    b.installArtifact(libjpeg);
+    return libjpeg;
+}
+
 fn addCuda(b: *std.Build, dlib: *std.Build.Step.Compile, optimize: std.builtin.Optimize) std.Build.LazyPath {
     const cuda_path = b.option(
         std.Build.LazyPath,
@@ -580,6 +609,8 @@ const DlibLink = struct {
 
 const Features = struct {
     gui: bool,
+    png: bool,
+    jpeg: bool,
     webp: bool,
     jxl: bool,
     cuda: bool,
@@ -588,8 +619,8 @@ const Features = struct {
 /// Macros that must match between dlib and anything that links against it,
 /// otherwise test_for_odr_violations reports a mismatch at link time.
 fn addDlibMacros(module: *std.Build.Module, features: Features) void {
-    module.addCMacro("DLIB_PNG_SUPPORT", "1");
-    module.addCMacro("DLIB_JPEG_SUPPORT", "1");
+    if (features.png) module.addCMacro("DLIB_PNG_SUPPORT", "1");
+    if (features.jpeg) module.addCMacro("DLIB_JPEG_SUPPORT", "1");
     if (features.webp) module.addCMacro("DLIB_WEBP_SUPPORT", "1");
     if (features.jxl) module.addCMacro("DLIB_JXL_SUPPORT", "1");
     if (!features.gui) module.addCMacro("DLIB_NO_GUI_SUPPORT", "1");
