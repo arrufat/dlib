@@ -20,11 +20,10 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const strip = optimize != .debug;
     const os_tag = target.result.os.tag;
-    const is_native = target.query.isNative();
 
     // Like dlib's CMake build, features that need a system library default to
     // on when pkg-config finds it.
-    const system: SystemLibs = .detect(b, is_native);
+    const system: SystemLibs = .detect(b, target);
     // OpenBLAS includes LAPACK; otherwise use the reference cblas and lapack.
     const blas_libs: []const []const u8 = if (!system.has("openblas") and system.hasAll(&.{ "cblas", "lapack" }))
         &.{ "cblas", "lapack" }
@@ -40,8 +39,8 @@ pub fn build(b: *std.Build) void {
             system.has("libwebp"),
         .jxl = b.option(bool, "jxl", "Build JPEG XL support against libjxl (default: if found)") orelse
             system.hasAll(&jxl_libs),
-        // giflib ships no .pc file, so it can't be detected.
-        .gif = b.option(bool, "gif", "Build GIF support against giflib") orelse false,
+        .gif = b.option(bool, "gif", "Build GIF support against giflib (default: if found)") orelse
+            system.hasFiles(b, "gif_lib.h", "gif"),
         .ffmpeg = b.option(bool, "ffmpeg", "Build dlib/media against FFmpeg (default: if found)") orelse
             system.hasAll(&ffmpeg_libs),
         .blas = b.option(bool, "blas", "Use BLAS and LAPACK, from OpenBLAS or cblas and lapack (default: if found)") orelse
@@ -402,8 +401,8 @@ fn queryHostPython(b: *std.Build) ?HostPython {
         b.dependOnFileContents(.{ .cwd_relative = b.pathJoin(&.{ host.include, "patchlevel.h" }) });
         return host;
     }
-    // Nothing to track; re-run configure until Python shows up.
-    b.graph.poisonCache();
+    // Re-run configure if Python gets installed.
+    trackDirs(b, b.graph.environ_map.get("PATH") orelse "");
     return null;
 }
 
@@ -659,9 +658,17 @@ const ffmpeg_libs = [_][]const u8{
 /// cross-compiling, since the host's libraries say nothing about the target.
 const SystemLibs = struct {
     pkg_config: ?std.zig.PkgConfig,
+    /// The include and library directories zig searches on the host.
+    native_paths: ?std.zig.system.NativePaths,
 
-    fn detect(b: *std.Build, is_native: bool) SystemLibs {
-        if (!is_native) return .{ .pkg_config = null };
+    fn detect(b: *std.Build, target: std.Build.ResolvedTarget) SystemLibs {
+        if (!target.query.isNative()) return .{ .pkg_config = null, .native_paths = null };
+        const native_paths = std.zig.system.NativePaths.detect(
+            b.allocator,
+            b.graph.io,
+            &target.result,
+            &b.graph.environ_map,
+        ) catch null;
         // The same pkg-config and lookup that linkSystemLibrary uses.
         const exe = std.zig.PkgConfig.exe(&b.graph.environ_map);
         const list = switch (b.runFallible(&.{ exe, "--list-all" }, .{ .stderr_behavior = .ignore })) {
@@ -669,7 +676,7 @@ const SystemLibs = struct {
             else => {
                 // Re-run configure if pkg-config gets installed.
                 trackDirs(b, b.graph.environ_map.get("PATH") orelse "");
-                return .{ .pkg_config = null };
+                return .{ .pkg_config = null, .native_paths = native_paths };
             },
         };
         // Re-run configure when a .pc file is added or removed, i.e. when a
@@ -681,7 +688,10 @@ const SystemLibs = struct {
                 .success => |out| out,
                 else => "",
             });
-        return .{ .pkg_config = std.zig.PkgConfig.init(b.allocator, list, null) catch null };
+        return .{
+            .pkg_config = std.zig.PkgConfig.init(b.allocator, list, null) catch null,
+            .native_paths = native_paths,
+        };
     }
 
     fn has(system: SystemLibs, name: []const u8) bool {
@@ -692,6 +702,29 @@ const SystemLibs = struct {
     fn hasAll(system: SystemLibs, names: []const []const u8) bool {
         for (names) |name| if (!system.has(name)) return false;
         return true;
+    }
+
+    /// For libraries without a .pc file: whether the header and the library
+    /// are in the directories zig searches, as CMake's find_package checks.
+    fn hasFiles(system: SystemLibs, b: *std.Build, header: []const u8, lib: []const u8) bool {
+        const paths = system.native_paths orelse return false;
+        // Re-run configure when the library is installed or removed.
+        for (paths.include_dirs.items) |dir| trackDir(b, dir);
+        for (paths.lib_dirs.items) |dir| trackDir(b, dir);
+        return containsAny(b, paths.include_dirs.items, &.{header}) and containsAny(b, paths.lib_dirs.items, &.{
+            b.fmt("lib{s}.so", .{lib}),
+            b.fmt("lib{s}.a", .{lib}),
+            b.fmt("lib{s}.dylib", .{lib}),
+            b.fmt("lib{s}.tbd", .{lib}),
+        });
+    }
+
+    fn containsAny(b: *std.Build, dirs: []const []const u8, names: []const []const u8) bool {
+        for (dirs) |dir| for (names) |name| {
+            std.Io.Dir.cwd().access(b.graph.io, b.pathJoin(&.{ dir, name }), .{}) catch continue;
+            return true;
+        };
+        return false;
     }
 
     /// `-fsys=name`, defaulting to the system library when it's installed.
@@ -705,11 +738,13 @@ const SystemLibs = struct {
 /// or removed from any directory in a search path.
 fn trackDirs(b: *std.Build, search_path: []const u8) void {
     var dirs = std.mem.tokenizeAny(u8, search_path, &[_]u8{std.fs.path.delimiter} ++ "\r\n");
-    while (dirs.next()) |dir| {
-        // Tracking a path that doesn't exist fails the configure step.
-        std.Io.Dir.cwd().access(b.graph.io, dir, .{}) catch continue;
-        b.dependOnDirectoryMetadata(.{ .cwd_relative = dir });
-    }
+    while (dirs.next()) |dir| trackDir(b, dir);
+}
+
+fn trackDir(b: *std.Build, dir: []const u8) void {
+    // Tracking a path that doesn't exist fails the configure step.
+    std.Io.Dir.cwd().access(b.graph.io, dir, .{}) catch return;
+    b.dependOnDirectoryMetadata(.{ .cwd_relative = dir });
 }
 
 /// Macros that must match between dlib and anything that links against it,
