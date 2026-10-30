@@ -12,7 +12,7 @@ const cppflags = [_][]const u8{
     "-fno-sanitize=undefined",
 };
 
-// tools/python/src/dlib.cpp records __DATE__ and __TIME__, which zig rejects by default.
+// tools/python/src/dlib.cpp uses __DATE__ and __TIME__, which zig rejects.
 const python_cppflags = cppflags ++ [_][]const u8{"-Wno-date-time"};
 
 pub fn build(b: *std.Build) void {
@@ -21,10 +21,8 @@ pub fn build(b: *std.Build) void {
     const strip = optimize != .debug;
     const os_tag = target.result.os.tag;
 
-    // Like dlib's CMake build, features that need a system library default to
-    // on when pkg-config finds it.
     const system: SystemLibs = .detect(b, target);
-    // OpenBLAS includes LAPACK; otherwise use the reference cblas and lapack.
+    // OpenBLAS includes LAPACK.
     const blas_libs: []const []const u8 = if (!system.has("openblas") and system.hasAll(&.{ "cblas", "lapack" }))
         &.{ "cblas", "lapack" }
     else
@@ -32,7 +30,6 @@ pub fn build(b: *std.Build) void {
     const features: Features = .{
         .gui = b.option(bool, "gui", "Build the GUI (default: win32 on Windows, X11 if found)") orelse
             (os_tag == .windows or system.has("x11")),
-        // On by default, so -fsys=libpng or -fsys=libjpeg alone picks the system library.
         .png = b.option(bool, "png", "Build PNG support (bundled libpng and zlib unless -fsys=libpng or -fsys=zlib)") orelse true,
         .jpeg = b.option(bool, "jpeg", "Build JPEG support (bundled libjpeg unless -fsys=libjpeg)") orelse true,
         .webp = b.option(bool, "webp", "Build WebP support against libwebp (default: if found)") orelse
@@ -183,8 +180,7 @@ pub fn build(b: *std.Build) void {
         });
         for (jxl_libs) |lib| dlib.root_module.linkSystemLibrary(lib, .{});
     }
-    // GIF, FFmpeg, BLAS and sqlite are used from headers; linking them into
-    // dlib passes them on to everything that links dlib.
+    // Used only from headers; linked here so dlib's consumers get them.
     if (features.gif) dlib.root_module.linkSystemLibrary("gif", .{});
     if (features.ffmpeg) {
         for (ffmpeg_libs) |lib| dlib.root_module.linkSystemLibrary(lib, .{});
@@ -194,7 +190,7 @@ pub fn build(b: *std.Build) void {
     }
     if (features.sqlite) dlib.root_module.linkSystemLibrary("sqlite3", .{});
     addDlibMacros(dlib.root_module, features);
-    // nvcc reuses dlib's macros, so this has to come after them.
+    // After addDlibMacros, since nvcc reuses them.
     const cuda_lib_dir = if (features.cuda) addCuda(b, dlib, optimize) else null;
     if (os_tag == .windows) {
         dlib.root_module.linkSystemLibrary("ws2_32", .{});
@@ -241,6 +237,7 @@ pub fn build(b: *std.Build) void {
     buildPythonModule(b, target, optimize, strip, dlib_link);
 }
 
+/// Adds the `python` step.
 fn buildPythonModule(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
@@ -268,15 +265,13 @@ fn buildPythonModule(
         "Python import library (python3XX.lib) for Windows targets (default: from the host Python for native builds)",
     );
 
-    // The Python API always offers PNG and JPEG, and face_recognition.cpp
-    // calls save_jpeg unconditionally.
+    // face_recognition.cpp calls save_jpeg unconditionally.
     if (!dlib.features.png or !dlib.features.jpeg) {
         step.dependOn(&b.addFail("the Python module needs PNG and JPEG support; drop -Dpng=false and -Djpeg=false").step);
         return;
     }
 
-    // build.zig runs before the requested step is known, so a missing Python
-    // must only fail `zig build python`, not the rest of the build.
+    // Fail only this step, so builds without Python still work.
     const needs_host = include_option == null or (is_native and
         (ext_suffix_option == null or (os_tag == .windows and import_lib_option == null)));
     const host = if (needs_host) queryHostPython(b) else null;
@@ -287,8 +282,7 @@ fn buildPythonModule(
     }
 
     const include_dir = include_option orelse std.Build.LazyPath{ .cwd_relative = host.?.include };
-    // Python also accepts a bare ".so"/".pyd", which is the safe choice when the
-    // host interpreter does not describe the target.
+    // Python also accepts a bare .so/.pyd suffix.
     const ext_suffix = ext_suffix_option orelse if (is_native)
         host.?.ext_suffix
     else if (os_tag == .windows) ".pyd" else ".so";
@@ -350,8 +344,7 @@ fn buildPythonModule(
     module.root_module.addCMacro("DLIB_VERSION", dlib_version);
     module.root_module.addCMacro("DLIB_NO_ABORT_ON_2ND_FATAL_ERROR", "");
 
-    // libpython symbols are resolved by the interpreter that loads the module,
-    // except on Windows, where the module must link the import library.
+    // The interpreter provides libpython, except on Windows.
     switch (os_tag) {
         .windows => if (import_lib) |lib| {
             module.root_module.addObjectFile(lib);
@@ -396,18 +389,16 @@ fn queryHostPython(b: *std.Build) ?HostPython {
             .ext_suffix = lines.next() orelse continue,
             .import_lib = lines.next() orelse continue,
         };
-        // zig caches the configure phase, so tie it to the Python version to
-        // pick up upgrades.
+        // Reconfigure on Python upgrades.
         b.dependOnFileContents(.{ .cwd_relative = b.pathJoin(&.{ host.include, "patchlevel.h" }) });
         return host;
     }
-    // Re-run configure if Python gets installed.
+    // Reconfigure if Python gets installed.
     trackDirs(b, b.graph.environ_map.get("PATH") orelse "");
     return null;
 }
 
-/// The C libraries vendored in dlib/external are always optimized, even in
-/// debug builds of dlib.
+/// The vendored C libraries are always optimized.
 fn addBundledCLib(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
@@ -547,6 +538,7 @@ fn addBundledLibjpeg(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build
     return libjpeg;
 }
 
+/// Adds CUDA support; returns the CUDA lib dir.
 fn addCuda(b: *std.Build, dlib: *std.Build.Step.Compile, optimize: std.builtin.Optimize) std.Build.LazyPath {
     const cuda_path = b.option(
         std.Build.LazyPath,
@@ -562,9 +554,7 @@ fn addCuda(b: *std.Build, dlib: *std.Build.Step.Compile, optimize: std.builtin.O
     ) orelse "native";
     const cuda_lib = cuda_path.path(b, "lib64");
 
-    // nvcc hands the host side of .cu files to a separate C++ compiler. Using
-    // zig's clang keeps it on the same libc++ as the rest of dlib, so the
-    // objects can share std types with the .cpp files.
+    // nvcc's host compiler must be zig's clang so .cu objects use dlib's libc++.
     const make_ccbin = b.addSystemCommand(&.{
         "sh", "-c",
         \\printf '#!/bin/sh\nexec "%s" c++ "$@"\n' "$1" > "$0" && chmod +x "$0"
@@ -611,12 +601,10 @@ fn addCuda(b: *std.Build, dlib: *std.Build.Step.Compile, optimize: std.builtin.O
     return cuda_lib;
 }
 
-/// What a module needs to build against and link with dlib.
 const DlibLink = struct {
     lib: *std.Build.Step.Compile,
     features: Features,
-    /// The library path of a static lib doesn't reach the final link, so
-    /// consumers have to add it to find the CUDA libraries.
+    /// A static lib's library paths don't reach the final link.
     cuda_lib_dir: ?std.Build.LazyPath,
 
     fn link(dlib: DlibLink, module: *std.Build.Module) void {
@@ -654,11 +642,9 @@ const ffmpeg_libs = [_][]const u8{
     "libavutil",
 };
 
-/// The libraries pkg-config knows about on the host. Empty when
-/// cross-compiling, since the host's libraries say nothing about the target.
+/// Libraries installed on the host; empty when cross-compiling.
 const SystemLibs = struct {
     pkg_config: ?std.zig.PkgConfig,
-    /// The include and library directories zig searches on the host.
     native_paths: ?std.zig.system.NativePaths,
 
     fn detect(b: *std.Build, target: std.Build.ResolvedTarget) SystemLibs {
@@ -669,19 +655,17 @@ const SystemLibs = struct {
             &target.result,
             &b.graph.environ_map,
         ) catch null;
-        // The same pkg-config and lookup that linkSystemLibrary uses.
+        // Same pkg-config and lookup as linkSystemLibrary.
         const exe = std.zig.PkgConfig.exe(&b.graph.environ_map);
         const list = switch (b.runFallible(&.{ exe, "--list-all" }, .{ .stderr_behavior = .ignore })) {
             .success => |out| out,
             else => {
-                // Re-run configure if pkg-config gets installed.
+                // Reconfigure if pkg-config gets installed.
                 trackDirs(b, b.graph.environ_map.get("PATH") orelse "");
                 return .{ .pkg_config = null, .native_paths = native_paths };
             },
         };
-        // Re-run configure when a .pc file is added or removed, i.e. when a
-        // library is installed or uninstalled. PKG_CONFIG_LIBDIR replaces
-        // the default search path.
+        // Reconfigure when a library is installed or removed.
         trackDirs(b, b.graph.environ_map.get("PKG_CONFIG_PATH") orelse "");
         trackDirs(b, b.graph.environ_map.get("PKG_CONFIG_LIBDIR") orelse
             switch (b.runFallible(&.{ exe, "--variable", "pc_path", "pkg-config" }, .{ .stderr_behavior = .ignore })) {
@@ -704,11 +688,9 @@ const SystemLibs = struct {
         return true;
     }
 
-    /// For libraries without a .pc file: whether the header and the library
-    /// are in the directories zig searches, as CMake's find_package checks.
+    /// For libraries without a .pc file.
     fn hasFiles(system: SystemLibs, b: *std.Build, header: []const u8, lib: []const u8) bool {
         const paths = system.native_paths orelse return false;
-        // Re-run configure when the library is installed or removed.
         for (paths.include_dirs.items) |dir| trackDir(b, dir);
         for (paths.lib_dirs.items) |dir| trackDir(b, dir);
         return containsAny(b, paths.include_dirs.items, &.{header}) and containsAny(b, paths.lib_dirs.items, &.{
@@ -727,28 +709,26 @@ const SystemLibs = struct {
         return false;
     }
 
-    /// `-fsys=name`, defaulting to the system library when it's installed.
+    /// `-fsys=name`, defaulting to installed.
     fn integration(system: SystemLibs, b: *std.Build, name: []const u8) bool {
-        // A null default keeps zig's own default, which `--system` turns on.
+        // null keeps `--system` working.
         return b.systemIntegrationOption(name, .{ .default = if (system.has(name)) true else null });
     }
 };
 
-/// zig caches the configure phase; this re-runs it when an entry is added to
-/// or removed from any directory in a search path.
 fn trackDirs(b: *std.Build, search_path: []const u8) void {
     var dirs = std.mem.tokenizeAny(u8, search_path, &[_]u8{std.fs.path.delimiter} ++ "\r\n");
     while (dirs.next()) |dir| trackDir(b, dir);
 }
 
+/// Reconfigures when `dir` changes.
 fn trackDir(b: *std.Build, dir: []const u8) void {
-    // Tracking a path that doesn't exist fails the configure step.
+    // A missing path fails configure.
     std.Io.Dir.cwd().access(b.graph.io, dir, .{}) catch return;
     b.dependOnDirectoryMetadata(.{ .cwd_relative = dir });
 }
 
-/// Macros that must match between dlib and anything that links against it,
-/// otherwise test_for_odr_violations reports a mismatch at link time.
+/// Must match between dlib and its users (see test_for_odr_violations).
 fn addDlibMacros(module: *std.Build.Module, features: Features) void {
     if (features.png) module.addCMacro("DLIB_PNG_SUPPORT", "1");
     if (features.jpeg) module.addCMacro("DLIB_JPEG_SUPPORT", "1");
