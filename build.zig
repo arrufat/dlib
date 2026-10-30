@@ -22,17 +22,32 @@ pub fn build(b: *std.Build) void {
     const os_tag = target.result.os.tag;
     const is_native = target.query.isNative();
 
-    // X11, libwebp and libjxl come from the host system, so they are off by default when cross-compiling.
+    // Like dlib's CMake build, features that need a system library default to
+    // on when pkg-config finds it.
+    const system: SystemLibs = .detect(b, is_native);
+    // OpenBLAS includes LAPACK; otherwise use the reference cblas and lapack.
+    const blas_libs: []const []const u8 = if (!system.has("openblas") and system.hasAll(&.{ "cblas", "lapack" }))
+        &.{ "cblas", "lapack" }
+    else
+        &.{"openblas"};
     const features: Features = .{
-        .gui = b.option(bool, "gui", "Build the GUI (X11 on Unix, win32 on Windows)") orelse
-            (is_native or os_tag == .windows),
-        .webp = b.option(bool, "webp", "Build WebP support against the system libwebp") orelse
-            (is_native and os_tag != .windows),
-        .jxl = b.option(bool, "jxl", "Build JPEG XL support against the system libjxl") orelse
-            (is_native and os_tag != .windows),
+        .gui = b.option(bool, "gui", "Build the GUI (default: win32 on Windows, X11 if found)") orelse
+            (os_tag == .windows or system.has("x11")),
         // On by default, so -fsys=libpng or -fsys=libjpeg alone picks the system library.
         .png = b.option(bool, "png", "Build PNG support (bundled libpng and zlib unless -fsys=libpng or -fsys=zlib)") orelse true,
         .jpeg = b.option(bool, "jpeg", "Build JPEG support (bundled libjpeg unless -fsys=libjpeg)") orelse true,
+        .webp = b.option(bool, "webp", "Build WebP support against libwebp (default: if found)") orelse
+            system.has("libwebp"),
+        .jxl = b.option(bool, "jxl", "Build JPEG XL support against libjxl (default: if found)") orelse
+            system.hasAll(&jxl_libs),
+        // giflib ships no .pc file, so it can't be detected.
+        .gif = b.option(bool, "gif", "Build GIF support against giflib") orelse false,
+        .ffmpeg = b.option(bool, "ffmpeg", "Build dlib/media against FFmpeg (default: if found)") orelse
+            system.hasAll(&ffmpeg_libs),
+        .blas = b.option(bool, "blas", "Use BLAS and LAPACK, from OpenBLAS or cblas and lapack (default: if found)") orelse
+            system.hasAll(blas_libs),
+        .sqlite = b.option(bool, "sqlite", "Link dlib/sqlite users against sqlite3 (default: if found)") orelse
+            system.has("sqlite3"),
         .cuda = b.option(bool, "cuda", "Build the CUDA/cuDNN backend (needs nvcc and cuDNN)") orelse false,
     };
 
@@ -125,10 +140,10 @@ pub fn build(b: *std.Build) void {
             },
             .flags = &cppflags,
         });
-        if (b.systemIntegrationOption("libpng", .{})) {
+        if (system.integration(b, "libpng")) {
             dlib.root_module.linkSystemLibrary("libpng", .{});
         } else {
-            dlib.root_module.linkLibrary(addBundledLibpng(b, target));
+            dlib.root_module.linkLibrary(addBundledLibpng(b, target, system));
         }
     }
     if (features.jpeg) {
@@ -140,7 +155,7 @@ pub fn build(b: *std.Build) void {
             },
             .flags = &cppflags,
         });
-        if (b.systemIntegrationOption("libjpeg", .{})) {
+        if (system.integration(b, "libjpeg")) {
             dlib.root_module.linkSystemLibrary("libjpeg", .{});
         } else {
             dlib.root_module.linkLibrary(addBundledLibjpeg(b, target));
@@ -167,10 +182,18 @@ pub fn build(b: *std.Build) void {
             },
             .flags = &cppflags,
         });
-        dlib.root_module.linkSystemLibrary("libjxl", .{});
-        dlib.root_module.linkSystemLibrary("libjxl_cms", .{});
-        dlib.root_module.linkSystemLibrary("libjxl_threads", .{});
+        for (jxl_libs) |lib| dlib.root_module.linkSystemLibrary(lib, .{});
     }
+    // GIF, FFmpeg, BLAS and sqlite are used from headers; linking them into
+    // dlib passes them on to everything that links dlib.
+    if (features.gif) dlib.root_module.linkSystemLibrary("gif", .{});
+    if (features.ffmpeg) {
+        for (ffmpeg_libs) |lib| dlib.root_module.linkSystemLibrary(lib, .{});
+    }
+    if (features.blas) {
+        for (blas_libs) |lib| dlib.root_module.linkSystemLibrary(lib, .{});
+    }
+    if (features.sqlite) dlib.root_module.linkSystemLibrary("sqlite3", .{});
     addDlibMacros(dlib.root_module, features);
     // nvcc reuses dlib's macros, so this has to come after them.
     const cuda_lib_dir = if (features.cuda) addCuda(b, dlib, optimize) else null;
@@ -430,7 +453,7 @@ fn addBundledZlib(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.St
     return zlib;
 }
 
-fn addBundledLibpng(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step.Compile {
+fn addBundledLibpng(b: *std.Build, target: std.Build.ResolvedTarget, system: SystemLibs) *std.Build.Step.Compile {
     const libpng = addBundledCLib(b, target, "png", "dlib/external/libpng", &.{
         "png.c",
         "pngerror.c",
@@ -459,7 +482,7 @@ fn addBundledLibpng(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.
             .flags = &cflags,
         });
     }
-    if (b.systemIntegrationOption("zlib", .{})) {
+    if (system.integration(b, "zlib")) {
         libpng.root_module.linkSystemLibrary("zlib", .{});
     } else {
         libpng.root_module.linkLibrary(addBundledZlib(b, target));
@@ -613,8 +636,81 @@ const Features = struct {
     jpeg: bool,
     webp: bool,
     jxl: bool,
+    gif: bool,
+    ffmpeg: bool,
+    blas: bool,
+    sqlite: bool,
     cuda: bool,
 };
+
+const jxl_libs = [_][]const u8{ "libjxl", "libjxl_cms", "libjxl_threads" };
+
+const ffmpeg_libs = [_][]const u8{
+    "libavdevice",
+    "libavfilter",
+    "libavformat",
+    "libavcodec",
+    "libswresample",
+    "libswscale",
+    "libavutil",
+};
+
+/// The libraries pkg-config knows about on the host. Empty when
+/// cross-compiling, since the host's libraries say nothing about the target.
+const SystemLibs = struct {
+    pkg_config: ?std.zig.PkgConfig,
+
+    fn detect(b: *std.Build, is_native: bool) SystemLibs {
+        if (!is_native) return .{ .pkg_config = null };
+        // The same pkg-config and lookup that linkSystemLibrary uses.
+        const exe = std.zig.PkgConfig.exe(&b.graph.environ_map);
+        const list = switch (b.runFallible(&.{ exe, "--list-all" }, .{ .stderr_behavior = .ignore })) {
+            .success => |out| out,
+            else => {
+                // Re-run configure if pkg-config gets installed.
+                trackDirs(b, b.graph.environ_map.get("PATH") orelse "");
+                return .{ .pkg_config = null };
+            },
+        };
+        // Re-run configure when a .pc file is added or removed, i.e. when a
+        // library is installed or uninstalled. PKG_CONFIG_LIBDIR replaces
+        // the default search path.
+        trackDirs(b, b.graph.environ_map.get("PKG_CONFIG_PATH") orelse "");
+        trackDirs(b, b.graph.environ_map.get("PKG_CONFIG_LIBDIR") orelse
+            switch (b.runFallible(&.{ exe, "--variable", "pc_path", "pkg-config" }, .{ .stderr_behavior = .ignore })) {
+                .success => |out| out,
+                else => "",
+            });
+        return .{ .pkg_config = std.zig.PkgConfig.init(b.allocator, list, null) catch null };
+    }
+
+    fn has(system: SystemLibs, name: []const u8) bool {
+        const pkg_config = system.pkg_config orelse return false;
+        return pkg_config.find(name) != null;
+    }
+
+    fn hasAll(system: SystemLibs, names: []const []const u8) bool {
+        for (names) |name| if (!system.has(name)) return false;
+        return true;
+    }
+
+    /// `-fsys=name`, defaulting to the system library when it's installed.
+    fn integration(system: SystemLibs, b: *std.Build, name: []const u8) bool {
+        // A null default keeps zig's own default, which `--system` turns on.
+        return b.systemIntegrationOption(name, .{ .default = if (system.has(name)) true else null });
+    }
+};
+
+/// zig caches the configure phase; this re-runs it when an entry is added to
+/// or removed from any directory in a search path.
+fn trackDirs(b: *std.Build, search_path: []const u8) void {
+    var dirs = std.mem.tokenizeAny(u8, search_path, &[_]u8{std.fs.path.delimiter} ++ "\r\n");
+    while (dirs.next()) |dir| {
+        // Tracking a path that doesn't exist fails the configure step.
+        std.Io.Dir.cwd().access(b.graph.io, dir, .{}) catch continue;
+        b.dependOnDirectoryMetadata(.{ .cwd_relative = dir });
+    }
+}
 
 /// Macros that must match between dlib and anything that links against it,
 /// otherwise test_for_odr_violations reports a mismatch at link time.
@@ -623,6 +719,12 @@ fn addDlibMacros(module: *std.Build.Module, features: Features) void {
     if (features.jpeg) module.addCMacro("DLIB_JPEG_SUPPORT", "1");
     if (features.webp) module.addCMacro("DLIB_WEBP_SUPPORT", "1");
     if (features.jxl) module.addCMacro("DLIB_JXL_SUPPORT", "1");
+    if (features.gif) module.addCMacro("DLIB_GIF_SUPPORT", "1");
+    if (features.ffmpeg) module.addCMacro("DLIB_USE_FFMPEG", "1");
+    if (features.blas) {
+        module.addCMacro("DLIB_USE_BLAS", "1");
+        module.addCMacro("DLIB_USE_LAPACK", "1");
+    }
     if (!features.gui) module.addCMacro("DLIB_NO_GUI_SUPPORT", "1");
     if (features.cuda) module.addCMacro("DLIB_USE_CUDA", "1");
     module.addCMacro("DLIB_ENABLE_ASSERTS", "1");
