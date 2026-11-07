@@ -3,6 +3,8 @@
 
 #include <dlib/svm.h>
 #include <dlib/rand.h>
+#include <cmath>
+#include <map>
 #include <vector>
 
 #include "tester.h"
@@ -93,20 +95,34 @@ namespace
 
 // ----------------------------------------------------------------------------------------
 
-    void test_ties()
+    void test_rare_positives()
     {
-        // On separable data every C classifies all the held out samples correctly, so
-        // the smallest one is chosen.
+        // 20 positives among 400 sparse samples of noise words, the positives also holding
+        // a few words of their own.  Strong regularization still gets the sign of the held
+        // out scores right on both classes, but ranks them worse, so it must not be chosen.
+        dlib::rand rnd;
         std::vector<sparse_type> x;
         std::vector<double> y;
-        for (int i = 0; i < 40; ++i)
+        for (int i = 0; i < 400; ++i)
         {
-            const double label = i < 10 ? +1 : -1;
-            x.push_back({{0, 5*label + 0.1*i}});
+            const double label = i < 20 ? +1 : -1;
+            std::map<unsigned long,double> words;
+            for (int k = 0; k < 20; ++k)
+                words[10 + rnd.get_random_32bit_number()%1000] = 1;
+            if (label > 0)
+            {
+                for (int k = 0; k < 3; ++k)
+                    words[rnd.get_random_32bit_number()%10] = 1;
+            }
+            x.emplace_back(words.begin(), words.end());
+            for (auto& word : x.back())
+                word.second /= std::sqrt(static_cast<double>(words.size()));
             y.push_back(label);
         }
         const auto df = auto_train_linear_classifier(x, y, false);
-        DLIB_TEST(find_c(df.decision_funct, x, y) == c_grid.front());
+        const double c = find_c(df.decision_funct, x, y);
+        dlog << LINFO << "chosen C: " << c;
+        DLIB_TEST(c >= 1);
     }
 
 // ----------------------------------------------------------------------------------------
@@ -138,7 +154,7 @@ namespace
         {
             test_sparse();
             print_spinner();
-            test_ties();
+            test_rare_positives();
             print_spinner();
             test_dense();
         }

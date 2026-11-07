@@ -13,7 +13,9 @@
 #include "sparse_kernel.h"
 #include "svm.h"
 #include <chrono>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <type_traits>
 #include <vector>
@@ -93,10 +95,12 @@ namespace dlib
             }
         }
 
-        // Keep the held out scores of the best C for Platt scaling.
-        std::vector<double> best_scores;
-        double best_accuracy = -1;
+        // The sigmoid is fit to each C's held out scores, and the C whose sigmoid gives
+        // those scores the lowest log loss is kept.
+        double best_loss = std::numeric_limits<double>::infinity();
         double best_c = 0;
+        double best_alpha = 0;
+        double best_beta = 0;
         for (const double c : {0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0})
         {
             std::vector<double> scores(y.size());
@@ -110,26 +114,29 @@ namespace dlib
                 }
             }
 
-            // The fraction of +1 and of -1 samples whose held out score has the right sign.
-            const matrix<double,1,2> accuracy = test_binary_decision_function(
-                [](const double score) { return score; }, scores, labels);
-            if (be_verbose)
+            const auto [alpha, beta] = learn_platt_scaling(scores, labels);
+            double loss = 0;
+            for (long i = 0; i < y.size(); ++i)
             {
-                std::cout << "C: " << c << "   +1 accuracy: " << accuracy(0)
-                          << "   -1 accuracy: " << accuracy(1) << std::endl;
+                // -log(P(y(i))) is log(1 + exp(margin)), written so large margins can't overflow.
+                const double margin = y(i) > 0 ? alpha*scores[i] + beta : -(alpha*scores[i] + beta);
+                loss += margin > 0 ? margin + std::log1p(std::exp(-margin)) : std::log1p(std::exp(margin));
             }
-            if (mean(accuracy) > best_accuracy)
+            loss /= y.size();
+            if (be_verbose)
+                std::cout << "C: " << c << "   held out log loss: " << loss << std::endl;
+            if (loss < best_loss)
             {
-                best_accuracy = mean(accuracy);
-                best_scores.swap(scores);
+                best_loss = loss;
                 best_c = c;
+                best_alpha = alpha;
+                best_beta = beta;
             }
         }
         if (be_verbose)
             std::cout << "chosen C: " << best_c << std::endl;
 
-        const auto [alpha, beta] = learn_platt_scaling(best_scores, labels);
-        return probabilistic_decision_function<kernel_type>(alpha, beta, train_svm(x, y, best_c));
+        return probabilistic_decision_function<kernel_type>(best_alpha, best_beta, train_svm(x, y, best_c));
     }
 
 // ----------------------------------------------------------------------------------------

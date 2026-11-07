@@ -319,7 +319,7 @@ try
         else
             ++true_ham;
     }
-    // With the default settings, the model gets 98.7% of the 1115 test messages right.
+    // With the default settings, the model gets 98.8% of the 1115 test messages right.
     cout << "\ntesting results on " << test_messages.size() << " messages" << endl;
     cout << "  accuracy:         " << double(true_spam + true_ham) / test_messages.size() << endl;
     cout << "  spam precision:   " << double(true_spam) / (true_spam + false_spam) << endl;

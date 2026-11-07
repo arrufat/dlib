@@ -56,15 +56,15 @@ namespace dlib
               of them +1 and M_neg of them -1, the +1 class gets C*M/(2*M_pos) and the -1
               class C*M/(2*M_neg).
             - C is chosen among 0.001, 0.01, 0.1, 1, 10, 100 and 1000 by 5-fold
-              cross-validation, with each fold holding the same share of each class.  The
-              chosen C maximizes the mean of the held out accuracies on the +1 and on the
-              -1 samples, and the smallest such C is chosen.  The same x and y always give
-              the same result.
+              cross-validation, with each fold holding the same share of each class.  Each
+              C's held out scores are given a sigmoid by learn_platt_scaling().  The chosen
+              C is the one whose sigmoid gives those scores the lowest log loss, and the
+              smallest such C if several do.  The same x and y always give the same result.
             - The returned function's decision_funct is the SVM trained on all the samples
-              with the chosen C, and its sigmoid is fit by learn_platt_scaling() to the
-              held out scores of the chosen C.
-            - If be_verbose == true, prints the held out accuracies of each C, and the
-              chosen C, to standard out.
+              with the chosen C, and its sigmoid is the one fit to the chosen C's held out
+              scores.
+            - If be_verbose == true, prints the held out log loss of each C, and the chosen
+              C, to standard out.
     !*/
 
 // ----------------------------------------------------------------------------------------
