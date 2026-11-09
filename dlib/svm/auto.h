@@ -15,7 +15,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
-#include <limits>
+#include <map>
 #include <numeric>
 #include <type_traits>
 #include <vector>
@@ -95,14 +95,16 @@ namespace dlib
             }
         }
 
-        // The sigmoid is fit to each C's held out scores, and the C whose sigmoid gives
-        // those scores the lowest log loss is kept.
-        double best_loss = std::numeric_limits<double>::infinity();
-        double best_c = 0;
-        double best_alpha = 0;
-        double best_beta = 0;
-        for (const double c : {0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0})
+        // Returns the held out log loss of C == 10^e, and the sigmoid it was measured with.
+        struct held_out_fit
         {
+            double loss;
+            double alpha;
+            double beta;
+        };
+        const auto fit_held_out = [&](const int e)
+        {
+            const double c = std::pow(10.0, e);
             std::vector<double> scores(y.size());
             for (long k = 0; k < num_folds; ++k)
             {
@@ -125,14 +127,38 @@ namespace dlib
             loss /= y.size();
             if (be_verbose)
                 std::cout << "C: " << c << "   held out log loss: " << loss << std::endl;
-            if (loss < best_loss)
-            {
-                best_loss = loss;
-                best_c = c;
-                best_alpha = alpha;
-                best_beta = beta;
-            }
+            return held_out_fit{loss, alpha, beta};
+        };
+
+        // fits[e] is the fit of C == 10^e.  best moves outward while it is an end of fits.
+        constexpr int min_exponent = -6;
+        constexpr int max_exponent = 6;
+        std::map<int, held_out_fit> fits;
+        for (const int e : {-1, 0, 1})
+            fits.emplace(e, fit_held_out(e));
+        int best = -1;
+        for (const auto& [e, f] : fits)
+        {
+            if (f.loss < fits.at(best).loss)
+                best = e;
         }
+        while (best == fits.begin()->first && best > min_exponent)
+        {
+            const held_out_fit& f = fits.emplace(best - 1, fit_held_out(best - 1)).first->second;
+            if (f.loss > fits.at(best).loss)
+                break;
+            --best;
+        }
+        while (best == fits.rbegin()->first && best < max_exponent)
+        {
+            const held_out_fit& f = fits.emplace(best + 1, fit_held_out(best + 1)).first->second;
+            if (f.loss >= fits.at(best).loss)
+                break;
+            ++best;
+        }
+        const double best_c = std::pow(10.0, best);
+        const double best_alpha = fits.at(best).alpha;
+        const double best_beta = fits.at(best).beta;
         if (be_verbose)
             std::cout << "chosen C: " << best_c << std::endl;
 

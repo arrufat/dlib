@@ -47,24 +47,25 @@ namespace dlib
             - is_binary_classification_problem(x,y) == true
             - y contains at least 5 examples of each class.
         ensures
-            - Trains a linear SVM on the given binary classification data and returns a
-              function that outputs the probability that a sample's label is +1.
+            - Trains a linear SVM on x and y and returns a function that outputs the
+              probability that a sample's label is +1.
             - kernel_type is linear_kernel<sample_type> if sample_type is a dlib::matrix,
               and sparse_linear_kernel<sample_type> otherwise.
-            - The SVM is trained with the svm_c_linear_dcd_trainer, with C scaled per class
-              so both classes weigh the same in its objective: trained on M samples, M_pos
-              of them +1 and M_neg of them -1, the +1 class gets C*M/(2*M_pos) and the -1
-              class C*M/(2*M_neg).
-            - C is chosen among 0.001, 0.01, 0.1, 1, 10, 100 and 1000 by 5-fold
-              cross-validation, with each fold holding the same share of each class.  Each
-              C's held out scores are given a sigmoid by learn_platt_scaling().  The chosen
-              C is the one whose sigmoid gives those scores the lowest log loss, and the
-              smallest such C if several do.  The same x and y always give the same result.
-            - The returned function's decision_funct is the SVM trained on all the samples
-              with the chosen C, and its sigmoid is the one fit to the chosen C's held out
-              scores.
-            - If be_verbose == true, prints the held out log loss of each C, and the chosen
-              C, to standard out.
+            - The SVM is an svm_c_linear_dcd_trainer whose C is scaled per class: trained
+              on M samples, M_pos of them +1 and M_neg of them -1, the +1 class gets
+              C*M/(2*M_pos) and the -1 class C*M/(2*M_neg).
+            - The loss of a value of C is the mean log loss of its 5-fold cross-validation
+              scores, after learn_platt_scaling() fits a sigmoid to them.  Each fold holds
+              the same share of each class.
+            - C is a power of 10 in [1e-6, 1e6].  The values tried are 0.1, 1 and 10, plus
+              the next power of 10 beyond the smallest or largest value tried, for as long
+              as that value has the lowest loss.  The chosen C is the value tried with the
+              lowest loss, the smallest on ties.
+            - The returned function's decision_funct is the SVM trained on all of x with the
+              chosen C, and its sigmoid is the one fit to that C's cross-validation scores.
+            - The same x and y always give the same result.
+            - If be_verbose == true, prints the loss of each value of C tried, and the
+              chosen C, to standard out.
     !*/
 
 // ----------------------------------------------------------------------------------------

@@ -20,8 +20,6 @@ namespace
     using sparse_type = std::vector<std::pair<unsigned long,double>>;
     using dense_type = matrix<double,0,1>;
 
-    const std::vector<double> c_grid = {0.001, 0.01, 0.1, 1, 10, 100, 1000};
-
 // ----------------------------------------------------------------------------------------
 
     // An unbalanced problem: num_pos positives and 100 - num_pos negatives that overlap
@@ -43,8 +41,8 @@ namespace
         }
     }
 
-    // Returns the C of the grid with which a class-balanced svm_c_linear_dcd_trainer
-    // gives df, or 0 if none does.
+    // Returns the power of 10 C, between 1e-6 and 1e6, with which a class-balanced
+    // svm_c_linear_dcd_trainer gives df, or 0 if none does.
     template <typename kernel_type, typename sample_type>
     double find_c (
         const decision_function<kernel_type>& df,
@@ -54,8 +52,9 @@ namespace
     {
         const double num_pos = sum(mat(y) > 0);
         const double num_neg = y.size() - num_pos;
-        for (const double c : c_grid)
+        for (int e = -6; e <= 6; ++e)
         {
+            const double c = std::pow(10.0, e);
             svm_c_linear_dcd_trainer<kernel_type> by_hand;
             by_hand.set_c_class1(c*y.size()/(2*num_pos));
             by_hand.set_c_class2(c*y.size()/(2*num_neg));
@@ -81,8 +80,8 @@ namespace
         DLIB_TEST(df(sparse_type{{0, 3.0}}) > 0.9);
         DLIB_TEST(df(sparse_type{{0, -3.0}}) < 0.1);
 
-        // The SVM inside is a class-balanced SVM trained on all the samples with one of
-        // the grid's C.
+        // The SVM inside is a class-balanced SVM trained on all the samples with a power
+        // of 10 C.
         const double c = find_c(df.decision_funct, x, y);
         dlog << LINFO << "chosen C: " << c;
         DLIB_TEST(c != 0);
@@ -127,6 +126,29 @@ namespace
 
 // ----------------------------------------------------------------------------------------
 
+    void test_search()
+    {
+        // The best C for make_problem() is below the initial 0.1, 1 and 10.
+        std::vector<sparse_type> x;
+        std::vector<double> y;
+        make_problem(x, y);
+        const double c = find_c(auto_train_linear_classifier(x, y, false).decision_funct, x, y);
+        dlog << LINFO << "chosen C: " << c;
+        DLIB_TEST(c < 0.1);
+
+        // With features 1000 times smaller, the scores shrink, but the sigmoid rescales them.
+        for (auto& sample : x)
+        {
+            for (auto& feature : sample)
+                feature.second *= 1e-3;
+        }
+        const auto df = auto_train_linear_classifier(x, y, false);
+        DLIB_TEST(df(sparse_type{{0, 3e-3}}) > 0.9);
+        DLIB_TEST(df(sparse_type{{0, -3e-3}}) < 0.1);
+    }
+
+// ----------------------------------------------------------------------------------------
+
     void test_dense()
     {
         std::vector<dense_type> x;
@@ -155,6 +177,8 @@ namespace
             test_sparse();
             print_spinner();
             test_rare_positives();
+            print_spinner();
+            test_search();
             print_spinner();
             test_dense();
         }
