@@ -33,15 +33,19 @@ namespace dlib
 // ----------------------------------------------------------------------------------------
 
     template <
-        typename sample_type
+        typename samples_type,
+        typename labels_type
         >
     probabilistic_decision_function<kernel_type> auto_train_linear_classifier (
-        const std::vector<sample_type>& x,
-        const std::vector<double>& y,
+        const samples_type& x,
+        const labels_type& y,
         bool be_verbose = true
     );
     /*!
         requires
+            - x is a vector of samples of type sample_type, and y a vector of labels, each
+              a dlib::matrix or something mat() converts to one, such as a std::vector or
+              a view of selected elements made with rowm().
             - sample_type is a dlib::matrix column vector, or a sparse vector as defined
               in dlib/svm/sparse_vector_abstract.h.
             - is_binary_classification_problem(x,y) == true

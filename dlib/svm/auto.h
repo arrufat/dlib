@@ -18,6 +18,7 @@
 #include <map>
 #include <numeric>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace dlib
@@ -34,31 +35,37 @@ namespace dlib
 
     namespace impl
     {
-        template <typename sample_type>
-        using auto_linear_kernel = std::conditional_t<is_matrix<sample_type>::value,
-                                                      linear_kernel<sample_type>,
-                                                      sparse_linear_kernel<sample_type>>;
+        // The type of the samples in samples_type, a container that mat() accepts.
+        template <typename samples_type>
+        using auto_sample_type =
+            typename std::decay_t<decltype(dlib::mat(std::declval<const samples_type&>()))>::type;
+
+        template <typename samples_type>
+        using auto_linear_kernel = std::conditional_t<is_matrix<auto_sample_type<samples_type>>::value,
+                                                      linear_kernel<auto_sample_type<samples_type>>,
+                                                      sparse_linear_kernel<auto_sample_type<samples_type>>>;
     }
 
     template <
-        typename sample_type
+        typename samples_type,
+        typename labels_type
         >
-    probabilistic_decision_function<impl::auto_linear_kernel<sample_type>> auto_train_linear_classifier (
-        const std::vector<sample_type>& samples,
-        const std::vector<double>& labels,
+    probabilistic_decision_function<impl::auto_linear_kernel<samples_type>> auto_train_linear_classifier (
+        const samples_type& samples,
+        const labels_type& labels,
         bool be_verbose = true
     )
     {
-        using kernel_type = impl::auto_linear_kernel<sample_type>;
+        using kernel_type = impl::auto_linear_kernel<samples_type>;
         constexpr long num_folds = 5;
 
-        const auto x = mat(samples);
-        const auto y = mat(labels);
+        const auto& x = mat(samples);
+        const auto& y = mat(labels);
         DLIB_CASSERT(is_binary_classification_problem(samples, labels),
             "\t auto_train_linear_classifier()"
             << "\n\t invalid inputs were given to this function"
-            << "\n\t samples.size(): " << samples.size()
-            << "\n\t labels.size(): " << labels.size()
+            << "\n\t x.size(): " << x.size()
+            << "\n\t y.size(): " << y.size()
         );
         DLIB_CASSERT(sum(y > 0) >= num_folds && sum(y < 0) >= num_folds,
             "You must provide at least " << num_folds << " examples of each class to this training routine.");
@@ -95,6 +102,8 @@ namespace dlib
             }
         }
 
+        const std::vector<double> label_values(y.begin(), y.end());
+
         // Returns the held out log loss of C == 10^e, and the sigmoid it was measured with.
         struct held_out_fit
         {
@@ -116,7 +125,7 @@ namespace dlib
                 }
             }
 
-            const auto [alpha, beta] = learn_platt_scaling(scores, labels);
+            const auto [alpha, beta] = learn_platt_scaling(scores, label_values);
             double loss = 0;
             for (long i = 0; i < y.size(); ++i)
             {

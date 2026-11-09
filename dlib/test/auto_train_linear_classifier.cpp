@@ -90,6 +90,21 @@ namespace
         const auto df2 = auto_train_linear_classifier(x, y, false);
         DLIB_TEST(df2.alpha == df.alpha && df2.beta == df.beta);
         DLIB_TEST(df2.decision_funct.b == df.decision_funct.b);
+
+        // A view of selected samples gives the same result as a copy of them.
+        std::vector<long> rows;
+        std::vector<sparse_type> copy_x;
+        std::vector<double> copy_y;
+        for (long i = 0; i < 100; i += 2)
+        {
+            rows.push_back(i);
+            copy_x.push_back(x[i]);
+            copy_y.push_back(y[i]);
+        }
+        const auto df_view = auto_train_linear_classifier(rowm(mat(x), mat(rows)), rowm(mat(y), mat(rows)), false);
+        const auto df_copy = auto_train_linear_classifier(copy_x, copy_y, false);
+        DLIB_TEST(df_view.alpha == df_copy.alpha && df_view.beta == df_copy.beta);
+        DLIB_TEST(df_view.decision_funct.b == df_copy.decision_funct.b);
     }
 
 // ----------------------------------------------------------------------------------------
