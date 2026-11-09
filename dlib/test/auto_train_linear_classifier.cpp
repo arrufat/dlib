@@ -81,10 +81,10 @@ namespace
         DLIB_TEST(df(sparse_type{{0, -3.0}}) < 0.1);
 
         // The SVM inside is a class-balanced SVM trained on all the samples with a power
-        // of 10 C.
+        // of 10 C, here below the initial 0.1, 1 and 10.
         const double c = find_c(df.decision_funct, x, y);
         dlog << LINFO << "chosen C: " << c;
-        DLIB_TEST(c != 0);
+        DLIB_TEST(c != 0 && c < 0.1);
 
         // The same data gives the same result.
         const auto df2 = auto_train_linear_classifier(x, y, false);
@@ -141,17 +141,12 @@ namespace
 
 // ----------------------------------------------------------------------------------------
 
-    void test_search()
+    void test_small_features()
     {
-        // The best C for make_problem() is below the initial 0.1, 1 and 10.
+        // With features 1000 times smaller, the scores shrink, but the sigmoid rescales them.
         std::vector<sparse_type> x;
         std::vector<double> y;
         make_problem(x, y);
-        const double c = find_c(auto_train_linear_classifier(x, y, false).decision_funct, x, y);
-        dlog << LINFO << "chosen C: " << c;
-        DLIB_TEST(c < 0.1);
-
-        // With features 1000 times smaller, the scores shrink, but the sigmoid rescales them.
         for (auto& sample : x)
         {
             for (auto& feature : sample)
@@ -193,7 +188,7 @@ namespace
             print_spinner();
             test_rare_positives();
             print_spinner();
-            test_search();
+            test_small_features();
             print_spinner();
             test_dense();
         }

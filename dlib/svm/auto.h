@@ -15,7 +15,6 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
-#include <map>
 #include <numeric>
 #include <type_traits>
 #include <utility>
@@ -81,7 +80,8 @@ namespace dlib
             return trainer.train(train_x, train_y);
         };
 
-        // fold[i] is the fold that holds out sample i.  Each class's shuffled samples are
+        // The folds are dealt here, not by cross_validate_trainer(), since the loss needs
+        // every sample's held out score.  fold[i] is the fold that holds out sample i.  Each class's shuffled samples are
         // dealt across the folds in turn.  train_rows[k] lists the samples fold k trains on.
         std::vector<long> order(y.size());
         std::iota(order.begin(), order.end(), 0);
@@ -139,39 +139,33 @@ namespace dlib
             return held_out_fit{loss, alpha, beta};
         };
 
-        // fits[e] is the fit of C == 10^e.  best moves outward while it is an end of fits.
-        constexpr int min_exponent = -6;
-        constexpr int max_exponent = 6;
-        std::map<int, held_out_fit> fits;
-        for (const int e : {-1, 0, 1})
-            fits.emplace(e, fit_held_out(e));
+        // C == 10^best.  Start with the best of 0.1, 1 and 10.  If that is 0.1 or 10, keep
+        // stepping the same way while the loss improves; ties go to the smaller C.
         int best = -1;
-        for (const auto& [e, f] : fits)
+        held_out_fit best_fit = fit_held_out(best);
+        for (const int e : {0, 1})
         {
-            if (f.loss < fits.at(best).loss)
+            const held_out_fit f = fit_held_out(e);
+            if (f.loss < best_fit.loss)
+            {
                 best = e;
+                best_fit = f;
+            }
         }
-        while (best == fits.begin()->first && best > min_exponent)
+        const int step = best == -1 ? -1 : best == 1 ? +1 : 0;
+        while (step != 0 && std::abs(best + step) <= 6)
         {
-            const held_out_fit& f = fits.emplace(best - 1, fit_held_out(best - 1)).first->second;
-            if (f.loss > fits.at(best).loss)
+            const held_out_fit f = fit_held_out(best + step);
+            if (step < 0 ? f.loss > best_fit.loss : f.loss >= best_fit.loss)
                 break;
-            --best;
+            best += step;
+            best_fit = f;
         }
-        while (best == fits.rbegin()->first && best < max_exponent)
-        {
-            const held_out_fit& f = fits.emplace(best + 1, fit_held_out(best + 1)).first->second;
-            if (f.loss >= fits.at(best).loss)
-                break;
-            ++best;
-        }
-        const double best_c = std::pow(10.0, best);
-        const double best_alpha = fits.at(best).alpha;
-        const double best_beta = fits.at(best).beta;
         if (be_verbose)
-            std::cout << "chosen C: " << best_c << std::endl;
+            std::cout << "chosen C: " << std::pow(10.0, best) << std::endl;
 
-        return probabilistic_decision_function<kernel_type>(best_alpha, best_beta, train_svm(x, y, best_c));
+        return probabilistic_decision_function<kernel_type>(
+            best_fit.alpha, best_fit.beta, train_svm(x, y, std::pow(10.0, best)));
     }
 
 // ----------------------------------------------------------------------------------------

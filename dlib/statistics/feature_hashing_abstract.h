@@ -52,9 +52,7 @@ namespace dlib
             - Each token is padded with a space on both sides.  Its n-grams are the
               runs of n consecutive bytes of the padded token, for each n in
               [min_n, max_n] no longer than it.  A padded token shorter than min_n is
-              one n-gram, whole.  This uses the boundary padding and short-token rule
-              of scikit-learn's analyzer='char_wb', applied to bytes.  For UTF-8 text,
-              n measures bytes and a window may split a multi-byte character.
+              one n-gram, whole.  A window may split a multi-byte UTF-8 character.
             - The n-grams are listed token by token, and within a token by increasing
               n and then by position.  An n-gram that occurs more than once is listed
               each time.
@@ -83,8 +81,7 @@ namespace dlib
             - num_buckets > 0
         ensures
             - Counts the n-grams in word_ngrams(tokens,min_n,max_n), hashed into
-              num_buckets buckets, without needing a vocabulary.  The result is
-              suitable for tfidf_transformer or a sparse linear trainer.
+              num_buckets buckets, without needing a vocabulary.
             - The n-gram s goes to bucket murmur_hash3(s.data(), s.size(), 0) % num_buckets.
             - Returns a sorted sparse vector: (b,c) means c n-grams went to bucket b.
         throws
